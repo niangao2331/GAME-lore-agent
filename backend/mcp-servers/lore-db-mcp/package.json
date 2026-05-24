@@ -1,0 +1,11 @@
+{
+  "name": "lore-db-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Standalone MCP server for Arknights lore PostgreSQL database",
+  "main": "server.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "pg": "^8.15.6"
+  }
+}

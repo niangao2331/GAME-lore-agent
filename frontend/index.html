@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IRIS // Arknights Lore Terminal</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/sidebar.css">
+  <link rel="stylesheet" href="/css/chat.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <span class="logo-icon">⚠</span>
+          <span class="logo-text">IRIS</span>
+          <span class="logo-sub">LORE TERMINAL</span>
+        </div>
+        <button id="btn-new-chat" class="btn-new-chat">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          NEW SESSION
+        </button>
+      </div>
+
+      <div id="session-list" class="session-list"></div>
+
+      <div class="sidebar-footer">
+        <div class="footer-status" id="footer-status">
+          <span class="status-dot"></span>
+          <span>SYSTEM ONLINE</span>
+        </div>
+        <button id="btn-settings" class="btn-settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          CONFIGURE
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Chat Area -->
+    <main id="main">
+      <div id="chat-header" class="chat-header">
+        <div class="header-left">
+          <div class="mode-controls">
+            <select id="depth-select" class="mode-select">
+              <option value="quick">QUICK SCAN</option>
+              <option value="deep">DEEP ANALYSIS</option>
+            </select>
+            <span class="mode-sep">|</span>
+            <select id="style-select" class="mode-select">
+              <option value="dossier">DOSSIER</option>
+              <option value="research">RESEARCH REPORT</option>
+              <option value="storytelling">STORYTELLING</option>
+            </select>
+          </div>
+        </div>
+        <div id="header-status" class="header-status">READY</div>
+      </div>
+
+      <div id="chat-messages" class="chat-messages">
+        <div class="welcome-screen">
+          <div class="welcome-badge">
+            <span class="badge-stripe"></span>
+            ARKNIGHTS LORE DATABASE
+            <span class="badge-stripe"></span>
+          </div>
+          <div class="welcome-logo">⚠</div>
+          <h2>IRIS LORE TERMINAL</h2>
+          <p class="welcome-subtitle">Industrial Research & Information System</p>
+          <div class="welcome-stats">
+            <div class="stat-item"><span class="stat-val" id="stat-assets">--</span><span class="stat-lbl">ASSETS</span></div>
+            <div class="stat-sep"></div>
+            <div class="stat-item"><span class="stat-val" id="stat-tags">--</span><span class="stat-lbl">TAGS</span></div>
+            <div class="stat-sep"></div>
+            <div class="stat-item"><span class="stat-val" id="stat-chunks">--</span><span class="stat-lbl">CHUNKS</span></div>
+          </div>
+          <p class="welcome-hint">Configure API key in settings, then begin inquiry.</p>
+        </div>
+      </div>
+
+      <div id="chat-input-area" class="chat-input-area">
+        <div class="input-wrapper">
+          <textarea id="chat-input" placeholder="ENTER QUERY..." rows="1" autofocus></textarea>
+          <button id="btn-send" class="btn-send" title="Send">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          </button>
+          <button id="btn-stop" class="btn-stop hidden" title="Halt">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          </button>
+        </div>
+        <p class="input-hint">[ ENTER TO TRANSMIT &nbsp;|&nbsp; SHIFT+ENTER FOR LINE BREAK ]</p>
+      </div>
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>⚙ SYSTEM CONFIGURATION</h2>
+          <button class="btn-close" id="btn-close-settings">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="cfg-apikey">API KEY</label>
+            <input type="password" id="cfg-apikey" placeholder="sk-..." autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="cfg-baseurl">BASE URL</label>
+            <input type="text" id="cfg-baseurl" placeholder="https://api.deepseek.com">
+          </div>
+          <div class="form-group">
+            <label for="cfg-model">MODEL</label>
+            <input type="text" id="cfg-model" placeholder="deepseek-v4-pro">
+          </div>
+          <div class="form-group">
+            <label for="cfg-protocol">PROTOCOL</label>
+            <select id="cfg-protocol">
+              <option value="openai">OpenAI Compatible</option>
+            </select>
+          </div>
+          <div class="form-actions">
+            <button id="btn-save-settings" class="btn-primary">SAVE CONFIG</button>
+            <button id="btn-test-connection" class="btn-secondary">TEST LINK</button>
+          </div>
+          <div id="settings-status" class="settings-status"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MCP Config Modal -->
+    <div id="mcp-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>🔌 MCP SERVER CONTROL</h2>
+          <button class="btn-close" id="btn-close-mcp">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="mcp-server-list" class="mcp-server-list"></div>
+          <div class="form-group">
+            <label>ADD MCP SERVER</label>
+            <div class="mcp-add-row">
+              <input type="text" id="mcp-add-id" placeholder="Server ID">
+              <select id="mcp-add-transport">
+                <option value="stdio">stdio</option>
+                <option value="http">http</option>
+              </select>
+            </div>
+            <div id="mcp-add-config"></div>
+            <button id="btn-add-mcp" class="btn-primary" style="margin-top:8px;">ADD SERVER</button>
+          </div>
+          <div id="mcp-status" class="settings-status"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/config.js"></script>
+  <script src="/js/sessions.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/chat.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

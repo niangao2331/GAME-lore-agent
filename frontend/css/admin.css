@@ -1,0 +1,166 @@
+:root {
+  --bg: #0d0f10;
+  --panel: #151719;
+  --panel-2: #1b1e21;
+  --line: #2b3035;
+  --text: #e7e2d6;
+  --muted: #9a958c;
+  --accent: #d8b94e;
+  --danger: #e46b6b;
+  --ok: #72c08b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Consolas, "Microsoft YaHei", monospace;
+}
+
+button, input, textarea, select {
+  font: inherit;
+}
+
+button, .link-btn {
+  border: 1px solid var(--line);
+  background: #20242a;
+  color: var(--text);
+  padding: 8px 10px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+button:hover, .link-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+input, textarea, select {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #0f1113;
+  color: var(--text);
+  padding: 8px;
+  outline: none;
+}
+
+textarea { resize: vertical; }
+
+.topbar {
+  height: 68px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  background: #111315;
+}
+
+.topbar h1 { margin: 0; font-size: 18px; color: var(--accent); }
+#status { font-size: 11px; color: var(--muted); }
+.token-row { display: grid; grid-template-columns: 280px auto auto; gap: 8px; align-items: center; }
+
+.layout {
+  display: grid;
+  grid-template-columns: 330px minmax(520px, 1fr) 360px;
+  height: calc(100vh - 68px);
+}
+
+.left-pane, .right-pane, .center-pane {
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--line);
+}
+
+.right-pane { border-right: 0; border-left: 1px solid var(--line); }
+.left-pane, .right-pane { background: var(--panel); padding: 14px; }
+.center-pane { padding: 16px; }
+
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.tab.active { color: var(--accent); border-color: var(--accent); }
+.hidden { display: none !important; }
+
+.search-panel { display: grid; gap: 8px; }
+.search-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.result-list { display: grid; gap: 8px; margin-top: 12px; }
+.result-item {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  padding: 9px;
+  cursor: pointer;
+}
+.result-item:hover { border-color: var(--accent); }
+.result-title { color: var(--accent); font-size: 13px; }
+.result-meta, .result-preview { color: var(--muted); font-size: 11px; margin-top: 5px; }
+.compact .result-item { cursor: default; }
+
+.empty-state {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.editor { display: grid; gap: 12px; }
+.editor-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+.editor-head > div { display: flex; gap: 10px; align-items: center; flex: 1; }
+.title-input { font-size: 18px; color: var(--accent); }
+.pill {
+  display: inline-block;
+  color: var(--accent);
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  background: #101214;
+  white-space: nowrap;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+#asset-text {
+  min-height: 360px;
+  line-height: 1.5;
+}
+
+.button-row { display: flex; gap: 8px; }
+
+.side-section {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+}
+.side-section h2, .editor h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.tag-add { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+.tag-list, .chunk-list { display: grid; gap: 8px; }
+.tag-card, .chunk-card {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  padding: 9px;
+}
+.tag-card.rejected { opacity: 0.55; border-color: #4b2a2a; }
+.tag-main, .chunk-main { color: var(--text); font-size: 12px; }
+.tag-controls { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 6px; margin-top: 8px; }
+.danger { color: var(--danger); }
+.ok { color: var(--ok); }
+
+.claim-text { min-height: 180px; }
+.claim-summary { min-height: 90px; }
+
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: 280px 1fr; }
+  .right-pane { grid-column: 1 / span 2; height: 320px; border-left: 0; border-top: 1px solid var(--line); }
+  .meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IRIS 管理台 // 资料库编辑</title>
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+  <div id="admin-app">
+    <header class="topbar">
+      <div>
+        <h1>IRIS 资料库编辑台</h1>
+        <span id="status">就绪</span>
+      </div>
+      <div class="token-row">
+        <input id="admin-token" type="password" placeholder="ADMIN_TOKEN（本机开发可留空）">
+        <button id="save-token">保存令牌</button>
+        <a href="/" class="link-btn">返回聊天</a>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="left-pane">
+        <div class="tabs">
+          <button class="tab active" data-tab="assets">资料</button>
+          <button class="tab" data-tab="claims">命题</button>
+        </div>
+
+        <section id="asset-search" class="search-panel">
+          <input id="asset-query" placeholder="搜索资料标题或正文">
+          <div class="search-row">
+            <input id="asset-category" placeholder="分类">
+            <input id="asset-tag" placeholder="标签">
+          </div>
+          <button id="search-assets">搜索资料</button>
+          <div id="asset-results" class="result-list"></div>
+        </section>
+
+        <section id="claim-search" class="search-panel hidden">
+          <input id="claim-query" placeholder="搜索命题">
+          <select id="claim-status-filter">
+            <option value="">全部状态</option>
+            <option value="unverified">未核验</option>
+            <option value="verified">已核验</option>
+            <option value="inferred">推断成立</option>
+            <option value="disputed">存在争议</option>
+            <option value="outdated">已过时</option>
+            <option value="rejected">已驳回</option>
+          </select>
+          <button id="search-claims">搜索命题</button>
+          <button id="new-claim">新建命题</button>
+          <div id="claim-results" class="result-list"></div>
+        </section>
+      </aside>
+
+      <section class="center-pane">
+        <div id="empty-state" class="empty-state">选择一条资料或命题开始编辑。</div>
+
+        <div id="asset-editor" class="editor hidden">
+          <div class="editor-head">
+            <div>
+              <span id="asset-id" class="pill"></span>
+              <input id="asset-title" class="title-input" placeholder="标题">
+            </div>
+            <button id="save-asset">保存元数据</button>
+          </div>
+          <div class="meta-grid">
+            <input id="asset-subtitle" placeholder="副标题">
+            <input id="asset-source-name" placeholder="来源名称">
+            <input id="asset-source-url" placeholder="来源链接">
+            <input id="asset-carrier-type" placeholder="载体类型">
+            <input id="asset-narrative-layer" placeholder="叙事层级">
+            <input id="asset-character-name" placeholder="角色名">
+            <input id="asset-activity-name" placeholder="活动名">
+            <input id="asset-mission-code" placeholder="关卡编号">
+          </div>
+          <textarea id="asset-text" spellcheck="false"></textarea>
+          <div class="button-row">
+            <button id="save-text">保存正文并重建分段</button>
+            <button id="rebuild-chunks">仅重建分段</button>
+          </div>
+          <h3>正文分段</h3>
+          <div id="chunk-list" class="chunk-list"></div>
+        </div>
+
+        <div id="claim-editor" class="editor hidden">
+          <div class="editor-head">
+            <span id="claim-id" class="pill">新建</span>
+            <select id="claim-status">
+              <option value="unverified">未核验</option>
+              <option value="verified">已核验</option>
+              <option value="inferred">推断成立</option>
+              <option value="disputed">存在争议</option>
+              <option value="outdated">已过时</option>
+              <option value="rejected">已驳回</option>
+            </select>
+            <button id="save-claim">保存命题</button>
+          </div>
+          <textarea id="claim-text" class="claim-text" placeholder="命题正文"></textarea>
+          <textarea id="claim-summary" class="claim-summary" placeholder="摘要"></textarea>
+          <div class="meta-grid">
+            <input id="claim-source-type" placeholder="来源类型" value="manual">
+            <input id="claim-source-ref" placeholder="来源引用">
+            <input id="claim-entities" placeholder='实体 JSON，例如 ["莱茵生命"]'>
+            <input id="claim-confidence" type="number" min="0" max="1" step="0.05" value="0.5">
+          </div>
+          <textarea id="claim-note" class="claim-summary" placeholder="备注"></textarea>
+        </div>
+      </section>
+
+      <aside class="right-pane">
+        <section class="side-section">
+          <h2>标签</h2>
+          <div class="tag-add">
+            <input id="tag-dim" placeholder="维度，例如 FACTION">
+            <input id="tag-value" placeholder="标签值">
+            <button id="add-tag">添加</button>
+          </div>
+          <div id="tag-list" class="tag-list"></div>
+        </section>
+
+        <section class="side-section">
+          <h2>命题证据</h2>
+          <div class="tag-add">
+            <input id="evidence-claim-id" placeholder="命题 ID">
+            <input id="evidence-chunk-id" placeholder="分段 ID，可留空">
+            <button id="add-evidence">绑定</button>
+          </div>
+          <div id="asset-claims" class="result-list compact"></div>
+        </section>
+
+        <section class="side-section">
+          <h2>版本历史</h2>
+          <div id="revision-list" class="result-list compact"></div>
+        </section>
+
+        <section class="side-section">
+          <h2>审计记录</h2>
+          <div id="audit-list" class="result-list compact"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>
