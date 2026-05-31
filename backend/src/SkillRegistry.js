@@ -27,8 +27,8 @@ export class SkillRegistry {
     const variants = [
       {
         name: 'lore-intel',
-        displayName: 'Intelligence Analyst',
-        description: 'Quick lore intelligence workflow. Dossier output.',
+        displayName: 'Intelligence Analyst [Synthesis]',
+        description: 'Quick lore intelligence workflow. Natural synthesis output.',
         depth: 'quick',
         style: 'dossier',
         icon: 'IA'
@@ -51,8 +51,8 @@ export class SkillRegistry {
       },
       {
         name: 'lore-intel-deep',
-        displayName: 'Intelligence Analyst [Deep]',
-        description: 'Deep lore intelligence workflow. Dossier output.',
+        displayName: 'Intelligence Analyst [Deep Synthesis]',
+        description: 'Deep lore intelligence workflow. Natural synthesis output.',
         depth: 'deep',
         style: 'dossier',
         icon: 'ID'
@@ -72,6 +72,14 @@ export class SkillRegistry {
         depth: 'deep',
         style: 'storytelling',
         icon: 'DS'
+      },
+      {
+        name: 'lore-intel-structured',
+        displayName: 'Intelligence Analyst [Structured]',
+        description: 'Metadata-driven scope planning. No evidence search during plan phase. Scoped subtasks by series/group.',
+        depth: 'structured',
+        style: 'dossier',
+        icon: 'ST'
       }
     ];
 

@@ -32,21 +32,54 @@ ALTER TABLE arknights_lore.asset_chunks
   ADD COLUMN IF NOT EXISTS search_vector tsvector;
 
 -- 4. Populate search vectors (only NULL rows) --------------------------------
-UPDATE arknights_lore.assets
-  SET search_vector =
-    setweight(to_tsvector('simple', COALESCE(title, '')), 'A') ||
-    setweight(to_tsvector('simple', COALESCE(subtitle, '')), 'B')
-  WHERE search_vector IS NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'arknights_lore'
+      AND table_name = 'assets'
+      AND column_name = 'search_vector'
+      AND is_generated = 'NEVER'
+  ) THEN
+    UPDATE arknights_lore.assets
+      SET search_vector =
+        setweight(to_tsvector('simple', COALESCE(title, '')), 'A') ||
+        setweight(to_tsvector('simple', COALESCE(subtitle, '')), 'B')
+      WHERE search_vector IS NULL;
+  END IF;
+END $$;
 
-UPDATE arknights_lore.text_contents
-  SET search_vector = to_tsvector('simple', COALESCE(full_text, ''))
-  WHERE search_vector IS NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'arknights_lore'
+      AND table_name = 'text_contents'
+      AND column_name = 'search_vector'
+      AND is_generated = 'NEVER'
+  ) THEN
+    UPDATE arknights_lore.text_contents
+      SET search_vector = to_tsvector('simple', COALESCE(full_text, ''))
+      WHERE search_vector IS NULL;
+  END IF;
+END $$;
 
-UPDATE arknights_lore.asset_chunks
-  SET search_vector =
-    setweight(to_tsvector('simple', COALESCE(heading, '')), 'A') ||
-    to_tsvector('simple', COALESCE(chunk_text, ''))
-  WHERE search_vector IS NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'arknights_lore'
+      AND table_name = 'asset_chunks'
+      AND column_name = 'search_vector'
+      AND is_generated = 'NEVER'
+  ) THEN
+    UPDATE arknights_lore.asset_chunks
+      SET search_vector =
+        setweight(to_tsvector('simple', COALESCE(heading, '')), 'A') ||
+        to_tsvector('simple', COALESCE(chunk_text, ''))
+      WHERE search_vector IS NULL;
+  END IF;
+END $$;
 
 -- 5. GIN indexes for tsvector columns ----------------------------------------
 CREATE INDEX IF NOT EXISTS idx_assets_search_vector
@@ -87,7 +120,7 @@ CREATE OR REPLACE FUNCTION arknights_lore.search_fts(
   search_query text,
   max_results integer DEFAULT 50
 ) RETURNS TABLE(
-  asset_id integer,
+  asset_id bigint,
   title text,
   category_code text,
   category_name text,
@@ -96,11 +129,7 @@ CREATE OR REPLACE FUNCTION arknights_lore.search_fts(
   source_table text
 ) AS $$
   WITH query_ts AS (
-    SELECT
-      CASE
-        WHEN $1 ~ '[''&|!():*]' THEN to_tsquery('simple', $1)
-        ELSE plainto_tsquery('simple', $1)
-      END AS q
+    SELECT websearch_to_tsquery('simple', $1) AS q
   )
   SELECT
     a.asset_id,
@@ -109,14 +138,14 @@ CREATE OR REPLACE FUNCTION arknights_lore.search_fts(
     c.category_name,
     LEFT(COALESCE(tc.full_text, ac.chunk_text, ''), 200) AS text_preview,
     GREATEST(
-      COALESCE(ts_rank(a.search_vector, qt.q), 0),
+      COALESCE(ts_rank(to_tsvector('simple', COALESCE(a.title, '') || ' ' || COALESCE(a.subtitle, '')), qt.q), 0),
       COALESCE(ts_rank(tc.search_vector, qt.q), 0),
       COALESCE(ts_rank(ac.search_vector, qt.q), 0)
     ) AS rank,
     CASE
       WHEN tc.search_vector @@ qt.q THEN 'text_content'
       WHEN ac.search_vector @@ qt.q THEN 'asset_chunk'
-      WHEN a.search_vector @@ qt.q THEN 'asset_meta'
+      WHEN to_tsvector('simple', COALESCE(a.title, '') || ' ' || COALESCE(a.subtitle, '')) @@ qt.q THEN 'asset_meta'
       ELSE 'fallback'
     END AS source_table
   FROM arknights_lore.assets a
@@ -124,7 +153,7 @@ CREATE OR REPLACE FUNCTION arknights_lore.search_fts(
   LEFT JOIN arknights_lore.text_contents tc ON tc.asset_id = a.asset_id
   LEFT JOIN arknights_lore.asset_chunks ac ON ac.asset_id = a.asset_id
   CROSS JOIN query_ts qt
-  WHERE a.search_vector @@ qt.q
+  WHERE to_tsvector('simple', COALESCE(a.title, '') || ' ' || COALESCE(a.subtitle, '')) @@ qt.q
      OR tc.search_vector @@ qt.q
      OR ac.search_vector @@ qt.q
   ORDER BY rank DESC

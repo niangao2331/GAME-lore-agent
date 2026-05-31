@@ -35,7 +35,8 @@ const Chat = {
             apiKey: config.apiKey,
             baseUrl: config.baseUrl,
             model: config.model,
-            protocol: config.protocol
+            protocol: config.protocol,
+            roundDelayMs: config.roundDelayMs
           },
           depth: document.getElementById('depth-select').value,
           style: document.getElementById('style-select').value
@@ -83,9 +84,8 @@ const Chat = {
               } else {
                 streamingEl.classList.remove('streaming-cursor');
               }
-              // Auto-scroll to bottom on each delta
-              const container = document.getElementById('chat-messages');
-              container.scrollTop = container.scrollHeight;
+              // Auto-scroll to bottom on each delta (only if user is at bottom)
+              UI.scrollChatToBottom(false);
               break;
 
             case 'tool_start':
@@ -97,6 +97,11 @@ const Chat = {
                 UI.updateToolResult(currentToolDiv, event.result);
                 currentToolDiv = null;
               }
+              fullContent = '';
+              break;
+
+            case 'rate_wait':
+              UI.setStatus(`WAIT ${event.delayMs}MS BEFORE NEXT ROUND`);
               break;
 
             case 'error':

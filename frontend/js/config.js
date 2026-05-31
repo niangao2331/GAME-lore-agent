@@ -7,7 +7,10 @@ const Config = {
     model: 'deepseek-v4-pro',
     protocol: 'openai',
     depth: 'quick',
-    style: 'dossier'
+    style: 'dossier',
+    roundDelayMs: 0,
+    fontSize: 13,
+    chatWidth: 100
   },
 
   get() {

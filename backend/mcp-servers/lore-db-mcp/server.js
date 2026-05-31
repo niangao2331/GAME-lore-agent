@@ -12,6 +12,68 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+// ── Jieba tokenizer (lazy init, dictionary from DB) ──────────────────────────
+let _jieba = null;
+
+async function ensureJieba() {
+  if (_jieba !== null) return;
+  try {
+    const nodejiebaModule = await import('nodejieba');
+    const nodejieba = nodejiebaModule.default || nodejiebaModule;
+    if (typeof nodejieba.cutForSearch !== 'function') {
+      throw new Error('nodejieba cutForSearch API is unavailable');
+    }
+    // Load entity names as custom vocabulary so names like 塔露拉/魏彦吾
+    // are recognized as single words instead of individual characters
+    try {
+      const p = getNewPool();
+      const client = await p.connect();
+      try {
+        await client.query('SET search_path TO public');
+        const r = await client.query(
+          `SELECT name FROM entities WHERE review_status != $1 AND LENGTH(name) BETWEEN 2 AND 20`,
+          ['rejected']
+        );
+        for (const row of r.rows) {
+          try { nodejieba.insertWord(row.name); } catch {}
+        }
+        console.error(`jieba dict loaded: ${r.rows.length} entities`);
+      } finally { client.release(); }
+    } catch (err) {
+      console.error('jieba entity dict load failed (continuing):', err.message);
+    }
+    _jieba = nodejieba;
+    console.error('nodejieba tokenizer initialized');
+  } catch {
+    console.error('nodejieba not available — falling back to structural tokenizer');
+    _jieba = false;
+  }
+}
+
+function tokenizeCJK(text) {
+  if (!_jieba) {
+    return text.split(/[\s,，、。；;|/]+/).map(s => s.trim()).filter(s => s.length >= 2);
+  }
+  const fw = new Set([
+    '的', '了', '呢', '吗', '啊', '吧', '着', '过', '与', '或', '而', '于',
+    '以', '之', '因', '被', '把', '从', '对', '向', '到', '让', '给', '由',
+    '此', '但', '如', '也', '还', '只', '才', '便', '即', '若', '虽', '然',
+    '可', '能', '会', '就', '都', '又', '再', '那', '哪', '什', '么', '怎',
+    '样', '些', '各', '很', '最', '更', '非', '常', '极', '是', '在', '有',
+  ]);
+  return _jieba.cutForSearch(text).filter(w => w.length >= 2 && !fw.has(w));
+}
+
+function buildWebsearchQuery(tokens, rawQuery) {
+  const cleaned = tokens
+    .map(t => String(t || '').trim())
+    .filter(Boolean)
+    .map(t => t.replace(/["\\]/g, ' ').trim())
+    .filter(Boolean);
+
+  return cleaned.length ? cleaned.join(' OR ') : rawQuery;
+}
+
 // ── Database config ──────────────────────────────────────────────────────
 const DB_CONFIG = {
   host: '127.0.0.1',
@@ -21,9 +83,14 @@ const DB_CONFIG = {
   password: '',
   ssl: false,
 };
+const NEW_DB_CONFIG = {
+  ...DB_CONFIG,
+  database: 'arknights_lore_new',
+};
 const SCHEMA = 'arknights_lore';
 
 let pool = null;
+let newPool = null;
 
 function getPool() {
   if (!pool) {
@@ -37,6 +104,18 @@ function getPool() {
   return pool;
 }
 
+function getNewPool() {
+  if (!newPool) {
+    newPool = new Pool({
+      ...NEW_DB_CONFIG,
+      max: 8,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
+  }
+  return newPool;
+}
+
 async function query(sql, params = []) {
   const client = await getPool().connect();
   try {
@@ -44,6 +123,29 @@ async function query(sql, params = []) {
     return await client.query(sql, params);
   } finally {
     client.release();
+  }
+}
+
+async function queryNew(sql, params = []) {
+  const client = await getNewPool().connect();
+  try {
+    await client.query('SET search_path TO public');
+    return await client.query(sql, params);
+  } finally {
+    client.release();
+  }
+}
+
+async function newLoreDbExists() {
+  try {
+    const result = await queryNew(`
+      SELECT
+        to_regclass('public.documents') IS NOT NULL AS has_documents,
+        to_regclass('public.text_units') IS NOT NULL AS has_text_units
+    `);
+    return Boolean(result.rows[0]?.has_documents && result.rows[0]?.has_text_units);
+  } catch {
+    return false;
   }
 }
 
@@ -62,12 +164,124 @@ async function runMigrations() {
     const files = readdirSync(migrationDir).filter(f => f.endsWith('.sql')).sort();
     for (const file of files) {
       const sql = readFileSync(join(migrationDir, file), 'utf-8');
-      await query(sql);
+      try {
+        await query(sql);
+      } catch (err) {
+        console.error(`Migration warning for ${file} (continuing):`, err.message);
+      }
     }
     console.error('Database migrations applied successfully');
   } catch (err) {
     console.error('Migration warning (non-fatal):', err.message);
   }
+}
+
+// ── Search vector maintenance ───────────────────────────────────────────────
+
+// Rebuild search_vector for all documents and text_units after jieba vocabulary
+// has been loaded. The key insight: to_tsvector('simple', ...) treats each
+// space-separated token as one lexeme. If we feed raw CJK text to to_tsvector,
+// it concatenates all characters into one giant "word" (e.g. '塔露拉和陈的身世':1).
+// To make CJK search work without pg_jieba, we must:
+// 1. Tokenize with nodejieba on the JS side
+// 2. Join tokens with spaces
+// 3. Feed the space-joined string to to_tsvector('simple', ...)
+// This produces a tsvector where each CJK word is an independent lexeme,
+// matching plainto_tsquery('simple', jiebaTokens) on the query side.
+async function rebuildSearchVectors() {
+  if (!(await newLoreDbExists())) return;
+
+  // Skip if jieba not available
+  if (!_jieba || _jieba === false) {
+    console.error('jieba not available — skipping search_vector rebuild (ILPKE fallback will be used)');
+    return;
+  }
+
+  // Load entity dictionary for jieba first
+  try {
+    const r = await queryNew(
+      `SELECT name FROM entities WHERE review_status != $1 AND LENGTH(name) BETWEEN 2 AND 20`,
+      ['rejected']
+    );
+    for (const row of r.rows) {
+      try { _jieba.insertWord(row.name); } catch {}
+    }
+    console.error(`jieba dict refreshed: ${r.rows.length} entities`);
+  } catch (err) {
+    console.error('jieba dict load for rebuild failed:', err.message);
+  }
+
+  const fw = new Set(['的','了','呢','吗','啊','吧','着','过','与','或','而','于','以','之','因','被','把','从','对','向','到','让','给','由','此','但','如','也','还','只','才','便','即','若','虽','然','可','能','会','就','都','又','再','那','哪','什','么','怎','样','些','各','很','最','更','非','常','极','是','在','有']);
+  function tok(text) {
+    if (!text) return '';
+    return _jieba.cutForSearch(text).filter(w => w.length >= 2 && !fw.has(w)).join(' ');
+  }
+
+  const docs = await queryNew('SELECT COUNT(*)::int AS c FROM documents');
+  const units = await queryNew('SELECT COUNT(*)::int AS c FROM text_units');
+  const docTotal = docs.rows[0]?.c || 0;
+  const unitTotal = units.rows[0]?.c || 0;
+
+  console.error(`Rebuilding search_vector with jieba tokens: ${docTotal} documents, ${unitTotal} text_units...`);
+
+  // Process documents in batches to avoid long-lock and memory issues
+  const docClient = await getNewPool().connect();
+  try {
+    await docClient.query('SET search_path TO public');
+    const { rows: docRows } = await docClient.query(
+      'SELECT document_id, title, subtitle, metadata->>\'operator_name\' AS op_name, metadata->>\'operator_summary\' AS op_summary FROM documents'
+    );
+    let docCount = 0;
+    const docBatch = [];
+    for (const row of docRows) {
+      docBatch.push({
+        id: row.document_id,
+        title: tok(row.title),
+        subtitle: tok(row.subtitle),
+        op_name: tok(row.op_name),
+        op_summary: tok(row.op_summary),
+      });
+    }
+    for (const b of docBatch) {
+      await docClient.query(
+        `UPDATE documents SET search_vector =
+           setweight(to_tsvector('simple', $2), 'A') ||
+           setweight(to_tsvector('simple', $3), 'B') ||
+           setweight(to_tsvector('simple', $4), 'A') ||
+           setweight(to_tsvector('simple', $5), 'B')
+         WHERE document_id = $1`,
+        [b.id, b.title, b.subtitle, b.op_name, b.op_summary]
+      );
+    }
+    console.error(`  documents done: ${docBatch.length}`);
+  } finally { docClient.release(); }
+
+  // Process text_units in batches — single row per UPDATE is slow but correct
+  const tuClient = await getNewPool().connect();
+  try {
+    await tuClient.query('SET search_path TO public');
+    const { rows: tuRows } = await tuClient.query(
+      'SELECT unit_id, heading, LEFT(text, 2000) AS text_chunk, metadata->>\'summary\' AS summary, metadata->>\'summary_short\' AS summary_short, metadata->>\'key_terms\' AS key_terms FROM text_units'
+    );
+    let tuCount = 0;
+    for (const row of tuRows) {
+      await tuClient.query(
+        `UPDATE text_units SET search_vector =
+           setweight(to_tsvector('simple', $2), 'A') ||
+           setweight(to_tsvector('simple', $3), 'B') ||
+           setweight(to_tsvector('simple', $4), 'C') ||
+           setweight(to_tsvector('simple', $5), 'C') ||
+           setweight(to_tsvector('simple', $6), 'C')
+         WHERE unit_id = $1`,
+        [row.unit_id, tok(row.heading), tok(row.text_chunk), tok(row.summary), tok(row.summary_short), tok(row.key_terms)]
+      );
+      tuCount++;
+      if (tuCount % 500 === 0) console.error(`  text_units: ${tuCount}/${unitTotal}`);
+    }
+    console.error(`  text_units done: ${tuCount}`);
+  } finally { tuClient.release(); }
+
+  console.error('search_vector rebuild complete');
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────
@@ -947,15 +1161,16 @@ async function handleSearchFTS(args) {
   const limit = Math.min(Math.max(Number(args.limit || 50), 1), 200);
   const schema = quoteIdent(SCHEMA);
 
-  // Build tsquery — if the query contains |&! operators, use to_tsquery, else plainto_tsquery
   const rawQuery = (args.query || '').trim();
   if (!rawQuery) return { rows: [], total: 0 };
 
-  const tsqueryExpr = /[|&!():*]/.test(rawQuery)
-    ? `to_tsquery('simple', $1)`
-    : `plainto_tsquery('simple', $1)`;
+  // Use jieba tokens for FTS, but keep the tsquery parser away from raw user
+  // syntax. to_tsquery treats punctuation/operators inside tokens as syntax and
+  // can raise PostgreSQL errors for ordinary mixed-language questions.
+  const tokens = tokenizeCJK(rawQuery);
+  const ftsQuery = buildWebsearchQuery(tokens, rawQuery);
 
-  const values = [rawQuery, domainCode];
+  const values = [ftsQuery, domainCode];
   const catClause = [];
   if (args.category) {
     values.push(args.category);
@@ -976,13 +1191,13 @@ async function handleSearchFTS(args) {
   values.push(limit);
 
   const result = await query(
-    `WITH query_ts AS (SELECT ${tsqueryExpr} AS q)
+    `WITH query_ts AS (SELECT websearch_to_tsquery('simple', $1) AS q)
      SELECT a.asset_id, a.asset_kind, a.title, a.subtitle, a.source_name,
             c.category_code, c.category_name,
             tc.carrier_type, tc.character_name, tc.activity_name,
             LEFT(COALESCE(tc.full_text, ''), 200) AS text_preview,
             GREATEST(
-              COALESCE(ts_rank(a.search_vector, qt.q), 0),
+              COALESCE(ts_rank(to_tsvector('simple', COALESCE(a.title, '') || ' ' || COALESCE(a.subtitle, '')), qt.q), 0),
               COALESCE(ts_rank(tc.search_vector, qt.q), 0)
             ) AS rank
      FROM ${schema}.assets a
@@ -991,7 +1206,7 @@ async function handleSearchFTS(args) {
      LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
      CROSS JOIN query_ts qt
      WHERE d.domain_code = $2
-       AND (a.search_vector @@ qt.q OR tc.search_vector @@ qt.q)
+       AND (to_tsvector('simple', COALESCE(a.title, '') || ' ' || COALESCE(a.subtitle, '')) @@ qt.q OR tc.search_vector @@ qt.q)
        ${catJoin}
      ORDER BY rank DESC
      LIMIT $${values.length}`,
@@ -1165,10 +1380,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function main() {
-  await runMigrations();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('lore-db-mcp server started');
+
+  ensureJieba().catch((err) => {
+    console.error('jieba initialization failed:', err.message);
+  });
+
+  if (process.env.LORE_DB_RUN_MAINTENANCE === '1') {
+    Promise.resolve()
+      .then(() => runMigrations())
+      .then(() => rebuildSearchVectors())
+      .catch((err) => {
+        console.error('Background database maintenance failed:', err.message);
+      });
+  }
 }
 
 main().catch((err) => {

@@ -1,6 +1,27 @@
 import { EventEmitter } from 'events';
 import { LLMClient } from './LLMClient.js';
 
+function clampRoundDelay(value) {
+  const delay = Number(value || 0);
+  if (!Number.isFinite(delay)) return 0;
+  return Math.min(Math.max(Math.round(delay), 0), 60000);
+}
+
+function sleepWithAbort(ms, signal) {
+  if (!ms || ms <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    }, { once: true });
+  });
+}
+
 export class Agent extends EventEmitter {
   constructor(sessionId, config, { toolRegistry, skillRegistry }) {
     super();
@@ -55,10 +76,16 @@ Current working directory: ${process.cwd()}`;
     try {
       let round = 0;
       const maxRounds = this.config.maxRounds || 15;
+      const roundDelayMs = clampRoundDelay(this.config.roundDelayMs);
 
       while (round < maxRounds) {
         if (this.abortController.signal.aborted) break;
         round++;
+
+        if (round > 1 && roundDelayMs > 0) {
+          this.emit('rate_wait', roundDelayMs, round);
+          await sleepWithAbort(roundDelayMs, this.abortController.signal);
+        }
 
         const requestMessages = [
           { role: 'system', content: systemPrompt },

@@ -11,6 +11,24 @@
   background: var(--bg-dead);
 }
 
+/* ═══ Centered Chat Layout ═══ */
+#main.constrained-view .chat-messages {
+  max-width: var(--chat-max-width);
+  width: 100%;
+  margin: 0 auto;
+}
+
+#main.constrained-view .chat-input-area {
+  max-width: var(--chat-max-width);
+  width: 100%;
+  margin: 0 auto;
+}
+
+#main.constrained-view .message {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 /* ═══ Chat Header ═══ */
 .chat-header {
   display: flex;
@@ -212,7 +230,7 @@
   flex: 1;
   min-width: 0;
   line-height: 1.65;
-  font-size: 13px;
+  font-size: var(--font-size);
 }
 
 .message-content p { margin-bottom: 6px; }
@@ -426,7 +444,7 @@
   padding: 3px 0;
   resize: none;
   max-height: 100px;
-  font-size: 13px;
+  font-size: var(--font-size);
   line-height: 1.5;
   color: var(--text-primary);
 }

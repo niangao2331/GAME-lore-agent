@@ -1,0 +1,791 @@
+{
+  "timestamp": "2026-05-30T06:36:33.998Z",
+  "summary": {
+    "pass": 20,
+    "fail": 0,
+    "totalScore": 1300,
+    "avgScore": "65.0",
+    "totalQueries": 20
+  },
+  "results": [
+    {
+      "query": "莱茵生命",
+      "score": 70,
+      "reasons": [
+        "story",
+        "profile",
+        "T3pub",
+        "5 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+27",
+        "broad"
+      ],
+      "docs": 83,
+      "a": 16,
+      "s": 40,
+      "f": 0,
+      "exp": 27,
+      "lanes": [
+        "in_universe_publication:1",
+        "official_record:15",
+        "story:67"
+      ],
+      "series": [
+        "孤星[CW](24+14)",
+        "绿野幻梦[DV](20)",
+        "孤岛风云[MB](18+13)",
+        "雪山降临1101[OS](4)",
+        "极限时速[RS](1)"
+      ],
+      "terms": [
+        "莱茵生命",
+        "莱茵生",
+        "茵生命",
+        "莱茵",
+        "茵生",
+        "生命"
+      ]
+    },
+    {
+      "query": "罗德岛",
+      "score": 75,
+      "reasons": [
+        "story",
+        "profile",
+        "T3pub",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+58",
+        "deep coverage",
+        "broad"
+      ],
+      "docs": 148,
+      "a": 50,
+      "s": 40,
+      "f": 0,
+      "exp": 58,
+      "lanes": [
+        "story:100",
+        "in_universe_publication:3",
+        "official_record:45"
+      ],
+      "series": [
+        "慈悲灯塔[14-](40+35)",
+        "破碎日冕[10-](28+21)",
+        "黑暗时代·上（序章）[0-](12)",
+        "黑暗时代·下[1-](12+2)",
+        "泰拉饭[DT](2)",
+        "伦蒂尼姆[11-](2)"
+      ],
+      "terms": [
+        "罗德岛",
+        "罗德",
+        "德岛"
+      ]
+    },
+    {
+      "query": "深海猎人",
+      "score": 70,
+      "reasons": [
+        "story",
+        "profile",
+        "T3pub",
+        "4 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+16",
+        "broad"
+      ],
+      "docs": 41,
+      "a": 8,
+      "s": 25,
+      "f": 0,
+      "exp": 16,
+      "lanes": [
+        "official_record:8",
+        "story:32",
+        "in_universe_publication:1"
+      ],
+      "series": [
+        "愚人号[SN](24+16)",
+        "覆潮之下[SV](3)",
+        "深海猎人[BP](2)",
+        "海鲜拼盘[DT](1)",
+        "西部往事[](1)",
+        "OF-EX6 完美落幕[](1)"
+      ],
+      "terms": [
+        "深海猎人",
+        "深海猎",
+        "海猎人",
+        "深海",
+        "海猎",
+        "猎人"
+      ]
+    },
+    {
+      "query": "整合运动",
+      "score": 65,
+      "reasons": [
+        "story",
+        "profile",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+28",
+        "broad"
+      ],
+      "docs": 76,
+      "a": 8,
+      "s": 40,
+      "f": 0,
+      "exp": 28,
+      "lanes": [
+        "official_record:8",
+        "story:68"
+      ],
+      "series": [
+        "相变临界[17-](22+15)",
+        "异卵同生[2-](19+11)",
+        "黑暗时代·上（序章）[0-](12)",
+        "黑暗时代·下[1-](12+2)",
+        "恶兆湍流[13-](2)",
+        "EP10 mainline[10-](1)"
+      ],
+      "terms": [
+        "整合运动",
+        "整合运",
+        "合运动",
+        "整合",
+        "合运",
+        "运动"
+      ]
+    },
+    {
+      "query": "塞雷娅",
+      "score": 70,
+      "reasons": [
+        "story",
+        "profile",
+        "T3pub",
+        "4 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+20",
+        "broad"
+      ],
+      "docs": 57,
+      "a": 5,
+      "s": 37,
+      "f": 0,
+      "exp": 20,
+      "lanes": [
+        "official_record:6",
+        "story:49",
+        "in_universe_publication:2"
+      ],
+      "series": [
+        "孤星[CW](24+6)",
+        "绿野幻梦[DV](20+14)",
+        "孤岛风云[MB](3)",
+        "哥伦比亚[UR](2)"
+      ],
+      "terms": [
+        "塞雷娅",
+        "塞雷",
+        "雷娅"
+      ]
+    },
+    {
+      "query": "克丽斯腾",
+      "score": 70,
+      "reasons": [
+        "story",
+        "profile",
+        "T3pub",
+        "5 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+4",
+        "broad"
+      ],
+      "docs": 34,
+      "a": 1,
+      "s": 30,
+      "f": 0,
+      "exp": 4,
+      "lanes": [
+        "official_record:3",
+        "story:29",
+        "in_universe_publication:2"
+      ],
+      "series": [
+        "孤星[CW](24+4)",
+        "绿野幻梦[DV](2)",
+        "EP15 mainline[15-](1)",
+        "邀请[MB](1)",
+        "擅闯者[UR](1)"
+      ],
+      "terms": [
+        "克丽斯腾",
+        "克丽斯",
+        "丽斯腾",
+        "克丽",
+        "丽斯",
+        "斯腾"
+      ]
+    },
+    {
+      "query": "凯尔希",
+      "score": 70,
+      "reasons": [
+        "story",
+        "profile",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+77",
+        "deep coverage",
+        "broad"
+      ],
+      "docs": 148,
+      "a": 31,
+      "s": 40,
+      "f": 0,
+      "exp": 77,
+      "lanes": [
+        "official_record:31",
+        "story:117"
+      ],
+      "series": [
+        "慈悲灯塔[14-](40+30)",
+        "离解复合[15-](23+15)",
+        "相变临界[17-](22+17)",
+        "急性衰竭[4-](20+15)",
+        "反常光谱[16-](4)",
+        "异卵同生[2-](3)"
+      ],
+      "terms": [
+        "凯尔希",
+        "凯尔",
+        "尔希"
+      ]
+    },
+    {
+      "query": "阿米娅",
+      "score": 65,
+      "reasons": [
+        "story",
+        "profile",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+49",
+        "broad"
+      ],
+      "docs": 100,
+      "a": 11,
+      "s": 40,
+      "f": 0,
+      "exp": 49,
+      "lanes": [
+        "official_record:11",
+        "story:89"
+      ],
+      "series": [
+        "破碎日冕[10-](28+22)",
+        "惊霆无声[12-](27+21)",
+        "黑暗时代·上（序章）[0-](12+2)",
+        "黑暗时代·下[1-](12+4)",
+        "淬火尘霾[11-](4)",
+        "恶兆湍流[13-](4)"
+      ],
+      "terms": [
+        "阿米娅",
+        "阿米",
+        "米娅"
+      ]
+    },
+    {
+      "query": "绿野幻梦",
+      "score": 35,
+      "reasons": [
+        "story",
+        "has docs",
+        "suppl",
+        "deep coverage"
+      ],
+      "docs": 20,
+      "a": 0,
+      "s": 20,
+      "f": 0,
+      "exp": 0,
+      "lanes": [
+        "story:20"
+      ],
+      "series": [
+        "绿野幻梦[DV](20)"
+      ],
+      "terms": [
+        "绿野幻梦",
+        "绿野幻",
+        "野幻梦",
+        "绿野",
+        "野幻",
+        "幻梦"
+      ]
+    },
+    {
+      "query": "孤星",
+      "score": 40,
+      "reasons": [
+        "story",
+        "T3pub",
+        "has docs",
+        "suppl",
+        "deep coverage"
+      ],
+      "docs": 25,
+      "a": 0,
+      "s": 25,
+      "f": 0,
+      "exp": 0,
+      "lanes": [
+        "story:24",
+        "in_universe_publication:1"
+      ],
+      "series": [
+        "孤星[CW](24)"
+      ],
+      "terms": [
+        "孤星"
+      ]
+    },
+    {
+      "query": "多萝西的承诺",
+      "score": 60,
+      "reasons": [
+        "story",
+        "profile",
+        "4 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+16"
+      ],
+      "docs": 24,
+      "a": 3,
+      "s": 7,
+      "f": 0,
+      "exp": 16,
+      "lanes": [
+        "story:23",
+        "official_record:1"
+      ],
+      "series": [
+        "绿野幻梦[DV](20+16)",
+        "迷雾重重[CW](1)",
+        "恒久法则[IS](1)",
+        "华尔兹“假面”[ZT](1)"
+      ],
+      "terms": [
+        "多萝西的承诺",
+        "多萝西",
+        "承诺",
+        "萝西的",
+        "西的承",
+        "的承诺",
+        "多萝西的",
+        "萝西的承"
+      ]
+    },
+    {
+      "query": "塞雷娅什么时候成为总辖",
+      "score": 70,
+      "reasons": [
+        "story",
+        "profile",
+        "T3pub",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+20",
+        "broad"
+      ],
+      "docs": 59,
+      "a": 5,
+      "s": 39,
+      "f": 0,
+      "exp": 20,
+      "lanes": [
+        "official_record:6",
+        "story:51",
+        "in_universe_publication:2"
+      ],
+      "series": [
+        "孤星[CW](24+6)",
+        "绿野幻梦[DV](20+14)",
+        "孤岛风云[MB](3)",
+        "哥伦比亚[UR](2)",
+        "EP04 mainline[4-](1)",
+        "一个水手出海了[SL](1)"
+      ],
+      "terms": [
+        "塞雷娅什么时候成为总辖",
+        "塞雷娅",
+        "雷娅什",
+        "娅什么",
+        "什么时",
+        "么时候",
+        "时候成",
+        "候成为"
+      ]
+    },
+    {
+      "query": "赫默和伊芙利特的关系",
+      "score": 70,
+      "reasons": [
+        "story",
+        "profile",
+        "T3pub",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+11",
+        "broad"
+      ],
+      "docs": 51,
+      "a": 5,
+      "s": 40,
+      "f": 0,
+      "exp": 11,
+      "lanes": [
+        "official_record:10",
+        "story:34",
+        "in_universe_publication:7"
+      ],
+      "series": [
+        "孤星[CW](24+11)",
+        "火蓝之心[OF](3)",
+        "孤岛风云[MB](2)",
+        "EP16 mainline[16-](1)",
+        "偶然[DM](1)",
+        "疯狂的信号[DV](1)"
+      ],
+      "terms": [
+        "赫默和伊芙利特的关系",
+        "赫默和伊芙利特",
+        "关系",
+        "赫默和",
+        "默和伊",
+        "和伊芙",
+        "伊芙利",
+        "芙利特"
+      ]
+    },
+    {
+      "query": "塞雷娅和赫默的关系",
+      "score": 65,
+      "reasons": [
+        "story",
+        "profile",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+31",
+        "broad"
+      ],
+      "docs": 74,
+      "a": 5,
+      "s": 40,
+      "f": 0,
+      "exp": 31,
+      "lanes": [
+        "official_record:6",
+        "story:68"
+      ],
+      "series": [
+        "孤星[CW](24+6)",
+        "绿野幻梦[DV](20+14)",
+        "孤岛风云[MB](18+11)",
+        "哥伦比亚[UR](2)",
+        "EP16 mainline[16-](1)",
+        "偶然[DM](1)"
+      ],
+      "terms": [
+        "塞雷娅和赫默的关系",
+        "塞雷娅和赫默",
+        "关系",
+        "塞雷娅",
+        "雷娅和",
+        "娅和赫",
+        "和赫默",
+        "赫默的"
+      ]
+    },
+    {
+      "query": "凯尔希和博士的关系",
+      "score": 70,
+      "reasons": [
+        "story",
+        "profile",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+75",
+        "deep coverage",
+        "broad"
+      ],
+      "docs": 146,
+      "a": 31,
+      "s": 40,
+      "f": 0,
+      "exp": 75,
+      "lanes": [
+        "official_record:31",
+        "story:115"
+      ],
+      "series": [
+        "慈悲灯塔[14-](40+28)",
+        "离解复合[15-](23+14)",
+        "相变临界[17-](22+17)",
+        "反常光谱[16-](21+16)",
+        "恶兆湍流[13-](3)",
+        "破碎日冕[10-](2)"
+      ],
+      "terms": [
+        "凯尔希和博士的关系",
+        "凯尔希和博士",
+        "关系",
+        "凯尔希",
+        "尔希和",
+        "希和博",
+        "和博士",
+        "博士的"
+      ]
+    },
+    {
+      "query": "那个在哥伦比亚搞科研的组织",
+      "score": 70,
+      "reasons": [
+        "story",
+        "profile",
+        "T3pub",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+18",
+        "broad"
+      ],
+      "docs": 108,
+      "a": 50,
+      "s": 40,
+      "f": 0,
+      "exp": 18,
+      "lanes": [
+        "in_universe_publication:1",
+        "official_record:49",
+        "story:58"
+      ],
+      "series": [
+        "叙拉古人[IS](24+17)",
+        "红丝绒[AD](19+1)",
+        "霍尔海雅[CW](2)",
+        "骑兵与猎人[GT](2)",
+        "EP09 mainline[9-](1)",
+        "歧路[BI](1)"
+      ],
+      "terms": [
+        "那个在哥伦比亚搞科研的组织",
+        "那个在哥伦比亚搞科研",
+        "组织",
+        "那个在",
+        "个在哥",
+        "在哥伦",
+        "哥伦比",
+        "伦比亚"
+      ]
+    },
+    {
+      "query": "谁杀了特蕾西娅",
+      "score": 65,
+      "reasons": [
+        "story",
+        "profile",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+55",
+        "broad"
+      ],
+      "docs": 99,
+      "a": 5,
+      "s": 40,
+      "f": 0,
+      "exp": 55,
+      "lanes": [
+        "official_record:5",
+        "story:94"
+      ],
+      "series": [
+        "慈悲灯塔[14-](40+29)",
+        "巴别塔[BB](23+17)",
+        "生于黑夜[DM](13+9)",
+        "特蕾西娅[15-](3)",
+        "特蕾西娅[10-](2)",
+        "如我所见[VI](2)"
+      ],
+      "terms": [
+        "谁杀了特蕾西娅",
+        "谁杀",
+        "特蕾西娅",
+        "谁杀了",
+        "杀了特",
+        "了特蕾",
+        "特蕾西",
+        "蕾西娅"
+      ]
+    },
+    {
+      "query": "炎魔事件是怎么回事",
+      "score": 65,
+      "reasons": [
+        "story",
+        "profile",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+38",
+        "broad"
+      ],
+      "docs": 74,
+      "a": 1,
+      "s": 6,
+      "f": 30,
+      "exp": 38,
+      "lanes": [
+        "official_record:1",
+        "story:73"
+      ],
+      "series": [
+        "破碎日冕[10-](28+14)",
+        "淬火尘霾[11-](27+16)",
+        "黑暗时代·上（序章）[0-](12+8)",
+        "孤岛风云[MB](2)",
+        "夜逃通告[AT](1)",
+        "溺火[EA](1)"
+      ],
+      "terms": [
+        "炎魔事件是怎么回事",
+        "炎魔事",
+        "魔事件",
+        "事件是",
+        "件是怎",
+        "是怎么",
+        "怎么回",
+        "么回事"
+      ]
+    },
+    {
+      "query": "源石技艺的起源",
+      "score": 70,
+      "reasons": [
+        "story",
+        "profile",
+        "T3pub",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+10",
+        "broad"
+      ],
+      "docs": 100,
+      "a": 50,
+      "s": 40,
+      "f": 0,
+      "exp": 10,
+      "lanes": [
+        "in_universe_publication:2",
+        "official_record:48",
+        "story:50"
+      ],
+      "series": [
+        "生于黑夜[DM](13+10)",
+        "众生行记[MT](4)",
+        "源石技艺[3-](3)",
+        "Raidian[16-](2)",
+        "阿纳托利[17-](2)",
+        "克里斯达尔艺术馆[CR](2)"
+      ],
+      "terms": [
+        "源石技艺的起源",
+        "源石技艺",
+        "起源",
+        "源石技",
+        "石技艺",
+        "技艺的",
+        "艺的起",
+        "的起源"
+      ]
+    },
+    {
+      "query": "阿米娅的亲生父母",
+      "score": 65,
+      "reasons": [
+        "story",
+        "profile",
+        "6 events",
+        "has docs",
+        "anchors",
+        "suppl",
+        "expand+49",
+        "broad"
+      ],
+      "docs": 100,
+      "a": 11,
+      "s": 40,
+      "f": 0,
+      "exp": 49,
+      "lanes": [
+        "official_record:11",
+        "story:89"
+      ],
+      "series": [
+        "破碎日冕[10-](28+22)",
+        "惊霆无声[12-](27+21)",
+        "黑暗时代·上（序章）[0-](12+2)",
+        "黑暗时代·下[1-](12+4)",
+        "淬火尘霾[11-](4)",
+        "恶兆湍流[13-](4)"
+      ],
+      "terms": [
+        "阿米娅的亲生父母",
+        "阿米娅",
+        "亲生父母",
+        "米娅的",
+        "娅的亲",
+        "的亲生",
+        "亲生父",
+        "生父母"
+      ]
+    }
+  ]
+}

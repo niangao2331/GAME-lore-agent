@@ -1,10 +1,43 @@
 const App = {
   async init() {
     this._restoreModeSelections();
+    this._applyFontSize();
+    this._applyChatWidth();
     this._fetchStats();
     this._bindEvents();
     this.refreshSessions();
     this._updateModeStatus();
+  },
+
+  _applyFontSize() {
+    const cfg = Config.get();
+    const size = cfg.fontSize || 13;
+    document.documentElement.style.setProperty('--font-size', size + 'px');
+    const label = document.getElementById('fontsize-label');
+    if (label) label.textContent = size;
+    const slider = document.getElementById('cfg-fontsize');
+    if (slider) slider.value = size;
+  },
+
+  _applyChatWidth() {
+    const cfg = Config.get();
+    const pct = cfg.chatWidth ?? 100;
+    this._setChatWidth(pct);
+    const slider = document.getElementById('cfg-chat-width');
+    if (slider) slider.value = pct;
+    const label = document.getElementById('chatwidth-label');
+    if (label) label.textContent = pct;
+  },
+
+  _setChatWidth(pct) {
+    const main = document.getElementById('main');
+    if (pct >= 100) {
+      main.classList.remove('constrained-view');
+      main.style.removeProperty('--chat-max-width');
+    } else {
+      main.classList.add('constrained-view');
+      main.style.setProperty('--chat-max-width', pct + '%');
+    }
   },
 
   _restoreModeSelections() {
@@ -112,6 +145,20 @@ const App = {
       Config.set({ depth, style });
     });
 
+    // Font size slider live preview
+    document.getElementById('cfg-fontsize').addEventListener('input', (e) => {
+      const size = e.target.value;
+      document.getElementById('fontsize-label').textContent = size;
+      document.documentElement.style.setProperty('--font-size', size + 'px');
+    });
+
+    // Chat width slider live preview
+    document.getElementById('cfg-chat-width').addEventListener('input', (e) => {
+      const pct = Number(e.target.value);
+      document.getElementById('chatwidth-label').textContent = pct;
+      this._setChatWidth(pct);
+    });
+
     // Keyboard shortcut for settings
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey && e.key === ',') {
@@ -172,11 +219,18 @@ const App = {
   },
 
   _saveSettings() {
+    const roundDelayMs = Math.min(
+      Math.max(Number(document.getElementById('cfg-round-delay').value || 0), 0),
+      60000
+    );
     const config = {
       apiKey: document.getElementById('cfg-apikey').value.trim(),
       baseUrl: document.getElementById('cfg-baseurl').value.trim(),
       model: document.getElementById('cfg-model').value.trim(),
-      protocol: document.getElementById('cfg-protocol').value
+      protocol: document.getElementById('cfg-protocol').value,
+      roundDelayMs,
+      fontSize: Number(document.getElementById('cfg-fontsize').value),
+      chatWidth: Number(document.getElementById('cfg-chat-width').value)
     };
     Config.set(config);
     UI.hideSettings();

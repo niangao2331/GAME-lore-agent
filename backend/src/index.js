@@ -7,6 +7,7 @@ import cors from 'cors';
 
 import { AgentManager } from './AgentManager.js';
 import { SessionStore } from './SessionStore.js';
+import { InteractionLogger } from './InteractionLogger.js';
 import { ToolRegistry } from './ToolRegistry.js';
 import { SkillRegistry } from './SkillRegistry.js';
 import { MCPRegistry } from './MCPRegistry.js';
@@ -26,6 +27,7 @@ const toolRegistry = new ToolRegistry();
 const skillRegistry = new SkillRegistry();
 const mcpRegistry = new MCPRegistry(toolRegistry);
 const sessionStore = new SessionStore(DATA_DIR);
+const interactionLogger = new InteractionLogger(DATA_DIR);
 const agentManager = new AgentManager({ toolRegistry, skillRegistry, sessionStore });
 
 const app = express();
@@ -38,7 +40,7 @@ app.get('/admin', (_req, res) => {
   res.sendFile(join(__dirname, '..', '..', 'frontend', 'admin.html'));
 });
 
-setupChatRoute(app, agentManager, sessionStore);
+setupChatRoute(app, agentManager, sessionStore, interactionLogger);
 setupSessionRoutes(app, sessionStore);
 setupConfigRoute(app, toolRegistry, skillRegistry, mcpRegistry);
 setupAdminRoutes(app);
@@ -72,8 +74,13 @@ app.get('/api/health', (_req, res) => {
     tools: toolRegistry.size,
     skills: skillRegistry.size,
     mcpServers: mcpRegistry.size,
-    modes: ['quick', 'deep'],
-    styles: ['dossier', 'research', 'storytelling']
+    modes: ['quick', 'deep', 'structured'],
+    styles: ['dossier', 'research', 'storytelling'],
+    rag: {
+      available: true,
+      enabled: false,
+      stages: ['doc_recall', 'unit_recall', 'rerank'],
+    }
   });
 });
 

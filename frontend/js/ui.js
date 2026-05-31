@@ -5,6 +5,20 @@ const UI = {
     return div.innerHTML;
   },
 
+  scrollChatToBottom(force = false) {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    if (force) {
+      container.scrollTop = container.scrollHeight;
+      return;
+    }
+    const threshold = 50;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom < threshold) {
+      container.scrollTop = container.scrollHeight;
+    }
+  },
+
   formatDate(isoString) {
     const d = new Date(isoString);
     const now = new Date();
@@ -94,9 +108,9 @@ const UI = {
     div.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-content">${rendered}</div>`;
 
     container.appendChild(div);
-    // Scroll to bottom after message is added
+    // Scroll to bottom after user message
     requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
+      this.scrollChatToBottom(true);
     });
     return div.querySelector('.message-content');
   },
@@ -136,7 +150,7 @@ const UI = {
 
     // Scroll to bottom
     requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
+      this.scrollChatToBottom(false);
     });
 
     // Toggle handler
@@ -216,6 +230,11 @@ const UI = {
     document.getElementById('cfg-baseurl').value = cfg.baseUrl;
     document.getElementById('cfg-model').value = cfg.model;
     document.getElementById('cfg-protocol').value = cfg.protocol;
+    document.getElementById('cfg-round-delay').value = Number(cfg.roundDelayMs || 0);
+    document.getElementById('cfg-fontsize').value = cfg.fontSize || 13;
+    document.getElementById('fontsize-label').textContent = cfg.fontSize || 13;
+    document.getElementById('cfg-chat-width').value = cfg.chatWidth ?? 100;
+    document.getElementById('chatwidth-label').textContent = cfg.chatWidth ?? 100;
     document.getElementById('settings-modal').classList.remove('hidden');
   },
 

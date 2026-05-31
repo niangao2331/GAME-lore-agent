@@ -46,10 +46,11 @@
             <select id="depth-select" class="mode-select">
               <option value="quick">QUICK SCAN</option>
               <option value="deep">DEEP ANALYSIS</option>
+              <option value="structured">STRUCTURED</option>
             </select>
             <span class="mode-sep">|</span>
             <select id="style-select" class="mode-select">
-              <option value="dossier">DOSSIER</option>
+              <option value="dossier">SYNTHESIS</option>
               <option value="research">RESEARCH REPORT</option>
               <option value="storytelling">STORYTELLING</option>
             </select>
@@ -119,6 +120,21 @@
             <select id="cfg-protocol">
               <option value="openai">OpenAI Compatible</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label for="cfg-round-delay">ROUND DELAY (MS)</label>
+            <input type="number" id="cfg-round-delay" min="0" max="60000" step="250" placeholder="0">
+            <small class="field-hint">Delay before each follow-up model call after tools. Use 1000-3000ms for APIs that 429 easily.</small>
+          </div>
+          <div class="form-group">
+            <label for="cfg-fontsize">FONT SIZE (<span id="fontsize-label">13</span>PX)</label>
+            <input type="range" id="cfg-fontsize" min="10" max="22" value="13" step="1">
+            <small class="field-hint">Adjust display font size. Default 13px, range 10–22px.</small>
+          </div>
+          <div class="form-group">
+            <label for="cfg-chat-width">CHAT WIDTH (<span id="chatwidth-label">100</span>%)</label>
+            <input type="range" id="cfg-chat-width" min="40" max="100" value="100" step="5">
+            <small class="field-hint">Constrain chat area width and center it. 100% = full width, 40% = narrow phone-like view.</small>
           </div>
           <div class="form-actions">
             <button id="btn-save-settings" class="btn-primary">SAVE CONFIG</button>

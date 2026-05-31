@@ -174,6 +174,29 @@ export class ToolRegistry {
           ready_for_final: {
             type: 'boolean',
             description: 'True only when source-tier checks and gap checks are complete'
+          },
+          plan_session_id: {
+            type: 'string',
+            description: 'Optional research/session id if a planner tool exists in this runtime'
+          },
+          completed_subtasks: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Subtask titles or ids completed since the last checkpoint'
+          },
+          read_unit_ids: {
+            type: 'array',
+            items: { type: 'number' },
+            description: 'Asset ids or chunk ids read with lore_db_read/lore_db_read_context for central evidence'
+          },
+          coverage_checklist_status: {
+            type: 'string',
+            description: 'Explicit status of the plan coverage checklist, especially missing Tier 1/Tier 2/Tier 3 lanes'
+          },
+          missing_required_sources: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Required source lanes or documents still missing'
           }
         },
         required: [
@@ -186,13 +209,33 @@ export class ToolRegistry {
         ]
       },
       handler: async (args) => {
+        const completedSubtasks = Array.isArray(args.completed_subtasks) ? args.completed_subtasks : [];
+        const readUnitIds = Array.isArray(args.read_unit_ids) ? args.read_unit_ids : [];
+        const missingRequired = Array.isArray(args.missing_required_sources) ? args.missing_required_sources : [];
+        const warnings = [];
+        if (!completedSubtasks.length && args.stage !== 'final_readiness_check') {
+          warnings.push('No completed search/read steps were reported; this checkpoint may be only a narrative self-report.');
+        }
+        if ((args.stage === 'post_read_analysis' || args.stage === 'final_readiness_check') && !readUnitIds.length) {
+          warnings.push('No read asset/chunk ids were reported; central claims may still be based on snippets.');
+        }
+        if (args.ready_for_final && (missingRequired.length || !readUnitIds.length)) {
+          warnings.push('ready_for_final=true is not credible while required sources are missing or no full assets/passages were read.');
+        }
+
         const status = args.ready_for_final
-          ? 'Final readiness checkpoint recorded. You may answer only if the stated gaps are acceptable and uncertainty is explicit.'
+          ? 'Final readiness checkpoint recorded. You may answer only if the stated gaps are acceptable, full units were read, and uncertainty is explicit.'
           : 'Analysis checkpoint recorded. Continue the planned searches/reads before finalizing.';
 
         return [
           status,
           `Stage: ${args.stage}`,
+          warnings.length ? `Checkpoint warnings: ${warnings.join(' ')}` : 'Checkpoint validation: structured fields present.',
+          `Plan session: ${args.plan_session_id || '(not used in this runtime)'}`,
+          `Completed search/read steps: ${completedSubtasks.length ? completedSubtasks.join(', ') : '(none reported)'}`,
+          `Read asset/chunk ids: ${readUnitIds.length ? readUnitIds.join(', ') : '(none reported)'}`,
+          `Coverage checklist status: ${args.coverage_checklist_status || '(not reported)'}`,
+          `Missing required sources: ${missingRequired.length ? missingRequired.join(', ') : '(none reported)'}`,
           `Working conclusion: ${args.working_conclusion}`,
           `Evidence status: ${args.evidence_status}`,
           `Gaps or contradictions: ${args.gaps_or_contradictions}`,
