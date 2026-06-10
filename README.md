@@ -3,8 +3,12 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 一个基于 **AI Agent + 结构化数据库** 的多游戏资料库智能问答平台。支持自然语言查询游戏剧情、角色、世界观，通过 MCP（Model Context Protocol）协议与 PostgreSQL 资料库交互，提供带引用溯源的深度 lore 分析。
+这个项目旨在解决游戏在碎片化叙事时文案工作者和玩家需要花费大量时间查询/核对原有设定和剧情。碎片化叙事游戏的显著特点就是游戏设定分布在多个角落多段剧情，而没有一个统一的设定集告诉玩家或者文案编辑“这里发生了什么”。
+得益于数据库和agent，该项目可以将以往繁琐的查询核对工作压缩至两到三分钟。使用方法也非常简单只需要描述你需要的内容，agent会自行调度查询所有资料并给出报告。同时项目也提供了空白数据库和入库指南，您可以自行搭建属于您自己的数据库。
+从性能和经济实惠角度来说，我更推荐使用deepseekv4pro来进行查询，虽然flash也是可以使用的，但是在面对海量的文本和隐藏在游戏中的各种暗线以及蛛丝马迹，pro的注意力表现明显更好。
 
-**在线预览**：部署后访问 `http://localhost:3000`
+
+部署后访问 `http://localhost:3000`
 
 ---
 
@@ -200,18 +204,6 @@ GAME-lore-agent/
 | `PGPASSWORD` | 数据库密码 | - |
 | `ADMIN_TOKEN` | 管理后台令牌 | - |
 | `PORT` | 服务端口 | `3000` |
-
----
-
-## 🤝 贡献指南
-
-欢迎提交 Issue 和 PR！
-
-1. Fork 本仓库
-2. 创建功能分支：`git checkout -b feature/xxx`
-3. 提交更改：`git commit -am 'feat: xxx'`
-4. 推送分支：`git push origin feature/xxx`
-5. 发起 Pull Request
 
 ---
 
