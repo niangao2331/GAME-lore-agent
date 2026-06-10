@@ -13,6 +13,8 @@
 
 agent内核基于https://github.com/Lianues/Iris ，当然如果你想要换成其他agent也是没有问题的。
 
+作者小群：1020622167
+
 部署后访问 `http://localhost:3000`
 
 ---
