@@ -5,12 +5,13 @@ const Config = {
     apiKey: '',
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-v4-pro',
-    protocol: 'openai',
+    database: '',
     depth: 'quick',
     style: 'dossier',
     roundDelayMs: 0,
     fontSize: 13,
-    chatWidth: 100
+    bubbleWidth: 100,
+    chatOffset: 0
   },
 
   get() {

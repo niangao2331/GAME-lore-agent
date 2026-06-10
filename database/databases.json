@@ -1,0 +1,58 @@
+{
+  "databases": [
+    {
+      "id": "arknights",
+      "name": "明日方舟资料库",
+      "dumpFile": "arknights/arknights_lore_new.dump",
+      "version": 1,
+      "env": {
+        "PGDATABASE": "arknights_lore_new"
+      }
+    },
+    {
+      "id": "yuanshen",
+      "name": "原神资料库",
+      "dumpFile": "yuan/yuanshen.dump",
+      "version": 1.1,
+      "env": {
+        "PGDATABASE": "yuanshen_structured"
+      }
+    },
+    {
+      "id": "structured-blank",
+      "name": "结构化资料库（空白模板）",
+      "dumpFile": "structured/structured_lore_blank.dump",
+      "version": 1,
+      "env": {
+        "PGDATABASE": "iris_structured"
+      }
+    },
+    {
+      "id": "res1999",
+      "name": "重返未来1999资料库",
+      "dumpFile": "1999/1999.dump",
+      "version": 1,
+      "env": {
+        "PGDATABASE": "res1999_structured"
+      }
+    },
+    {
+      "id": "wuwa",
+      "name": "鸣潮资料库",
+      "dumpFile": "wuwa/wuwa.dump",
+      "version": 1,
+      "env": {
+        "PGDATABASE": "wuwa_structured"
+      }
+    },
+    {
+      "id": "limbus",
+      "name": "边狱巴士资料库",
+      "dumpFile": "LB/LB.dump",
+      "version": 5,
+      "env": {
+        "PGDATABASE": "limbus_structured"
+      }
+    }
+  ]
+}

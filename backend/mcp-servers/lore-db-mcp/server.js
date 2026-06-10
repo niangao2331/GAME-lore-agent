@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-import { readdirSync, readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -12,85 +9,16 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-// ── Jieba tokenizer (lazy init, dictionary from DB) ──────────────────────────
-let _jieba = null;
-
-async function ensureJieba() {
-  if (_jieba !== null) return;
-  try {
-    const nodejiebaModule = await import('nodejieba');
-    const nodejieba = nodejiebaModule.default || nodejiebaModule;
-    if (typeof nodejieba.cutForSearch !== 'function') {
-      throw new Error('nodejieba cutForSearch API is unavailable');
-    }
-    // Load entity names as custom vocabulary so names like 塔露拉/魏彦吾
-    // are recognized as single words instead of individual characters
-    try {
-      const p = getNewPool();
-      const client = await p.connect();
-      try {
-        await client.query('SET search_path TO public');
-        const r = await client.query(
-          `SELECT name FROM entities WHERE review_status != $1 AND LENGTH(name) BETWEEN 2 AND 20`,
-          ['rejected']
-        );
-        for (const row of r.rows) {
-          try { nodejieba.insertWord(row.name); } catch {}
-        }
-        console.error(`jieba dict loaded: ${r.rows.length} entities`);
-      } finally { client.release(); }
-    } catch (err) {
-      console.error('jieba entity dict load failed (continuing):', err.message);
-    }
-    _jieba = nodejieba;
-    console.error('nodejieba tokenizer initialized');
-  } catch {
-    console.error('nodejieba not available — falling back to structural tokenizer');
-    _jieba = false;
-  }
-}
-
-function tokenizeCJK(text) {
-  if (!_jieba) {
-    return text.split(/[\s,，、。；;|/]+/).map(s => s.trim()).filter(s => s.length >= 2);
-  }
-  const fw = new Set([
-    '的', '了', '呢', '吗', '啊', '吧', '着', '过', '与', '或', '而', '于',
-    '以', '之', '因', '被', '把', '从', '对', '向', '到', '让', '给', '由',
-    '此', '但', '如', '也', '还', '只', '才', '便', '即', '若', '虽', '然',
-    '可', '能', '会', '就', '都', '又', '再', '那', '哪', '什', '么', '怎',
-    '样', '些', '各', '很', '最', '更', '非', '常', '极', '是', '在', '有',
-  ]);
-  return _jieba.cutForSearch(text).filter(w => w.length >= 2 && !fw.has(w));
-}
-
-function buildWebsearchQuery(tokens, rawQuery) {
-  const cleaned = tokens
-    .map(t => String(t || '').trim())
-    .filter(Boolean)
-    .map(t => t.replace(/["\\]/g, ' ').trim())
-    .filter(Boolean);
-
-  return cleaned.length ? cleaned.join(' OR ') : rawQuery;
-}
-
-// ── Database config ──────────────────────────────────────────────────────
 const DB_CONFIG = {
-  host: '127.0.0.1',
-  port: 5432,
-  database: 'arknights_lore',
-  user: 'postgres',
-  password: '',
+  host: process.env.PGHOST || '127.0.0.1',
+  port: Number(process.env.PGPORT || 5432),
+  database: process.env.PGDATABASE || 'lore_db',
+  user: process.env.PGUSER || 'postgres',
+  password: process.env.PGPASSWORD || '',
   ssl: false,
 };
-const NEW_DB_CONFIG = {
-  ...DB_CONFIG,
-  database: 'arknights_lore_new',
-};
-const SCHEMA = 'arknights_lore';
 
 let pool = null;
-let newPool = null;
 
 function getPool() {
   if (!pool) {
@@ -104,30 +32,8 @@ function getPool() {
   return pool;
 }
 
-function getNewPool() {
-  if (!newPool) {
-    newPool = new Pool({
-      ...NEW_DB_CONFIG,
-      max: 8,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    });
-  }
-  return newPool;
-}
-
 async function query(sql, params = []) {
   const client = await getPool().connect();
-  try {
-    await client.query(`SET search_path TO "${SCHEMA}", public`);
-    return await client.query(sql, params);
-  } finally {
-    client.release();
-  }
-}
-
-async function queryNew(sql, params = []) {
-  const client = await getNewPool().connect();
   try {
     await client.query('SET search_path TO public');
     return await client.query(sql, params);
@@ -136,238 +42,270 @@ async function queryNew(sql, params = []) {
   }
 }
 
-async function newLoreDbExists() {
-  try {
-    const result = await queryNew(`
-      SELECT
-        to_regclass('public.documents') IS NOT NULL AS has_documents,
-        to_regclass('public.text_units') IS NOT NULL AS has_text_units
-    `);
-    return Boolean(result.rows[0]?.has_documents && result.rows[0]?.has_text_units);
-  } catch {
-    return false;
-  }
+function clampLimit(value, fallback, max) {
+  return Math.min(Math.max(Number(value || fallback), 1), max);
 }
 
-function quoteIdent(value) {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
-    throw new Error(`Invalid SQL identifier: ${value}`);
-  }
-  return `"${value}"`;
+function numberOrNull(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
-// ── Migration runner ────────────────────────────────────────────────────────
-async function runMigrations() {
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  const migrationDir = join(__dirname, 'migrations');
-  try {
-    const files = readdirSync(migrationDir).filter(f => f.endsWith('.sql')).sort();
-    for (const file of files) {
-      const sql = readFileSync(join(migrationDir, file), 'utf-8');
-      try {
-        await query(sql);
-      } catch (err) {
-        console.error(`Migration warning for ${file} (continuing):`, err.message);
-      }
-    }
-    console.error('Database migrations applied successfully');
-  } catch (err) {
-    console.error('Migration warning (non-fatal):', err.message);
+function stringArray(value) {
+  if (Array.isArray(value)) return value.map(v => String(v).trim()).filter(Boolean);
+  if (typeof value === 'string' && value.trim()) {
+    return value.split(/[,，、;；|/]+/).map(v => v.trim()).filter(Boolean);
   }
+  return null;
 }
 
-// ── Search vector maintenance ───────────────────────────────────────────────
-
-// Rebuild search_vector for all documents and text_units after jieba vocabulary
-// has been loaded. The key insight: to_tsvector('simple', ...) treats each
-// space-separated token as one lexeme. If we feed raw CJK text to to_tsvector,
-// it concatenates all characters into one giant "word" (e.g. '塔露拉和陈的身世':1).
-// To make CJK search work without pg_jieba, we must:
-// 1. Tokenize with nodejieba on the JS side
-// 2. Join tokens with spaces
-// 3. Feed the space-joined string to to_tsvector('simple', ...)
-// This produces a tsvector where each CJK word is an independent lexeme,
-// matching plainto_tsquery('simple', jiebaTokens) on the query side.
-async function rebuildSearchVectors() {
-  if (!(await newLoreDbExists())) return;
-
-  // Skip if jieba not available
-  if (!_jieba || _jieba === false) {
-    console.error('jieba not available — skipping search_vector rebuild (ILPKE fallback will be used)');
-    return;
-  }
-
-  // Load entity dictionary for jieba first
-  try {
-    const r = await queryNew(
-      `SELECT name FROM entities WHERE review_status != $1 AND LENGTH(name) BETWEEN 2 AND 20`,
-      ['rejected']
-    );
-    for (const row of r.rows) {
-      try { _jieba.insertWord(row.name); } catch {}
-    }
-    console.error(`jieba dict refreshed: ${r.rows.length} entities`);
-  } catch (err) {
-    console.error('jieba dict load for rebuild failed:', err.message);
-  }
-
-  const fw = new Set(['的','了','呢','吗','啊','吧','着','过','与','或','而','于','以','之','因','被','把','从','对','向','到','让','给','由','此','但','如','也','还','只','才','便','即','若','虽','然','可','能','会','就','都','又','再','那','哪','什','么','怎','样','些','各','很','最','更','非','常','极','是','在','有']);
-  function tok(text) {
-    if (!text) return '';
-    return _jieba.cutForSearch(text).filter(w => w.length >= 2 && !fw.has(w)).join(' ');
-  }
-
-  const docs = await queryNew('SELECT COUNT(*)::int AS c FROM documents');
-  const units = await queryNew('SELECT COUNT(*)::int AS c FROM text_units');
-  const docTotal = docs.rows[0]?.c || 0;
-  const unitTotal = units.rows[0]?.c || 0;
-
-  console.error(`Rebuilding search_vector with jieba tokens: ${docTotal} documents, ${unitTotal} text_units...`);
-
-  // Process documents in batches to avoid long-lock and memory issues
-  const docClient = await getNewPool().connect();
-  try {
-    await docClient.query('SET search_path TO public');
-    const { rows: docRows } = await docClient.query(
-      'SELECT document_id, title, subtitle, metadata->>\'operator_name\' AS op_name, metadata->>\'operator_summary\' AS op_summary FROM documents'
-    );
-    let docCount = 0;
-    const docBatch = [];
-    for (const row of docRows) {
-      docBatch.push({
-        id: row.document_id,
-        title: tok(row.title),
-        subtitle: tok(row.subtitle),
-        op_name: tok(row.op_name),
-        op_summary: tok(row.op_summary),
-      });
-    }
-    for (const b of docBatch) {
-      await docClient.query(
-        `UPDATE documents SET search_vector =
-           setweight(to_tsvector('simple', $2), 'A') ||
-           setweight(to_tsvector('simple', $3), 'B') ||
-           setweight(to_tsvector('simple', $4), 'A') ||
-           setweight(to_tsvector('simple', $5), 'B')
-         WHERE document_id = $1`,
-        [b.id, b.title, b.subtitle, b.op_name, b.op_summary]
-      );
-    }
-    console.error(`  documents done: ${docBatch.length}`);
-  } finally { docClient.release(); }
-
-  // Process text_units in batches — single row per UPDATE is slow but correct
-  const tuClient = await getNewPool().connect();
-  try {
-    await tuClient.query('SET search_path TO public');
-    const { rows: tuRows } = await tuClient.query(
-      'SELECT unit_id, heading, LEFT(text, 2000) AS text_chunk, metadata->>\'summary\' AS summary, metadata->>\'summary_short\' AS summary_short, metadata->>\'key_terms\' AS key_terms FROM text_units'
-    );
-    let tuCount = 0;
-    for (const row of tuRows) {
-      await tuClient.query(
-        `UPDATE text_units SET search_vector =
-           setweight(to_tsvector('simple', $2), 'A') ||
-           setweight(to_tsvector('simple', $3), 'B') ||
-           setweight(to_tsvector('simple', $4), 'C') ||
-           setweight(to_tsvector('simple', $5), 'C') ||
-           setweight(to_tsvector('simple', $6), 'C')
-         WHERE unit_id = $1`,
-        [row.unit_id, tok(row.heading), tok(row.text_chunk), tok(row.summary), tok(row.summary_short), tok(row.key_terms)]
-      );
-      tuCount++;
-      if (tuCount % 500 === 0) console.error(`  text_units: ${tuCount}/${unitTotal}`);
-    }
-    console.error(`  text_units done: ${tuCount}`);
-  } finally { tuClient.release(); }
-
-  console.error('search_vector rebuild complete');
+function smallintArray(value) {
+  const raw = Array.isArray(value) ? value : (value == null ? [] : [value]);
+  const arr = raw.map(Number).filter(v => Number.isInteger(v) && v >= 1 && v <= 5);
+  return arr.length ? arr : null;
 }
 
-// ── Tool definitions ──────────────────────────────────────────────────────
+function documentIdFromArgs(args) {
+  return numberOrNull(args.document_id ?? args.asset_id);
+}
+
+function unitIdFromArgs(args) {
+  return numberOrNull(args.unit_id ?? args.chunk_id);
+}
+
+function termsForBrowse(rawQuery) {
+  const terms = String(rawQuery || '')
+    .split(/[\s,，、。；;|/&]+/)
+    .map(t => t.trim())
+    .filter(Boolean)
+    .map(t => `%${t}%`);
+  return terms.length ? terms : null;
+}
+
+const documentSelect = `
+  d.document_id,
+  d.document_id AS asset_id,
+  d.external_key,
+  d.title,
+  d.subtitle,
+  d.source_name,
+  d.source_uri,
+  d.source_uri AS source_url,
+  d.source_tier,
+  d.content_type,
+  d.canon_status,
+  d.perspective_scope,
+  d.metadata,
+  d.review_status,
+  d.ai_usage_notes,
+  d.created_at,
+  d.updated_at,
+  d.metadata->>'top_group' AS top_group,
+  d.metadata->>'group_name' AS group_name,
+  d.metadata->'story_path' AS story_path,
+  d.metadata->>'operator_name' AS operator_name,
+  d.metadata->>'operator_summary' AS operator_summary
+`;
+
+async function relationInfo(name) {
+  const result = await query(
+    `SELECT c.relkind
+     FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public' AND c.relname = $1`,
+    [name],
+  );
+  const relkind = result.rows[0]?.relkind || null;
+  return {
+    exists: Boolean(relkind),
+    kind: relkind === 'm' ? 'materialized_view' : relkind === 'v' ? 'view' : relkind === 'r' ? 'table' : relkind,
+  };
+}
+
+async function tableCount(name) {
+  const info = await relationInfo(name);
+  if (!info.exists) return null;
+  const result = await query(`SELECT COUNT(*)::int AS count FROM ${name}`);
+  return result.rows[0]?.count ?? 0;
+}
+
+async function columnExists(table, column) {
+  const result = await query(
+    `SELECT 1
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+    [table, column],
+  );
+  return result.rowCount > 0;
+}
+
+async function missingSearchVectors(table) {
+  const info = await relationInfo(table);
+  if (!info.exists) return null;
+  if (!(await columnExists(table, 'search_vector'))) return null;
+  const result = await query(`SELECT COUNT(*)::int AS count FROM ${table} WHERE search_vector IS NULL`);
+  return result.rows[0]?.count ?? 0;
+}
+
+async function getCacheHealth(baseCounts = null) {
+  const counts = baseCounts || (await query(`
+    SELECT
+      current_database() AS database,
+      (SELECT COUNT(*) FROM documents)::int AS documents,
+      (SELECT COUNT(*) FROM text_units)::int AS text_units,
+      (SELECT COUNT(*) FROM entities)::int AS entities,
+      (SELECT COUNT(*) FROM entity_aliases)::int AS entity_aliases,
+      (SELECT COUNT(*) FROM entity_mentions)::int AS entity_mentions,
+      to_regproc('public.search_evidence_optimized') IS NOT NULL AS has_search_evidence_optimized,
+      to_regproc('public.browse_tree_optimized') IS NOT NULL AS has_browse_tree_optimized,
+      to_regclass('public.document_stats') IS NOT NULL AS has_document_stats
+  `)).rows[0];
+
+  const browseRelation = await relationInfo('document_stats');
+  const browseRows = browseRelation.exists ? await tableCount('document_stats') : null;
+  const documentVectorsMissing = await missingSearchVectors('documents');
+  const textUnitVectorsMissing = await missingSearchVectors('text_units');
+  const warnings = [];
+  const recommendedActions = [];
+
+  if (counts.documents > 0 && browseRelation.exists && browseRows === 0) {
+    warnings.push('browse_cache_empty_but_documents_exist');
+    recommendedActions.push('refresh_document_stats');
+  }
+  if (counts.documents > 0 && documentVectorsMissing > 0) {
+    warnings.push('document_search_vectors_missing');
+    recommendedActions.push('rebuild_search_vectors');
+  }
+  if (counts.text_units > 0 && textUnitVectorsMissing > 0) {
+    warnings.push('text_unit_search_vectors_missing');
+    recommendedActions.push('rebuild_search_vectors');
+  }
+  if (!counts.has_search_evidence_optimized) warnings.push('optimized_search_function_missing');
+  if (!counts.has_browse_tree_optimized) warnings.push('optimized_browse_function_missing');
+
+  return {
+    tables: {
+      documents: counts.documents,
+      text_units: counts.text_units,
+      entities: counts.entities,
+      entity_aliases: counts.entity_aliases,
+      entity_mentions: counts.entity_mentions,
+    },
+    search: {
+      has_search_function: counts.has_search_evidence_optimized,
+      has_browse_function: counts.has_browse_tree_optimized,
+      document_vectors_missing: documentVectorsMissing,
+      text_unit_vectors_missing: textUnitVectorsMissing,
+    },
+    browse_cache: {
+      exists: browseRelation.exists,
+      kind: browseRelation.kind,
+      rows: browseRows,
+      healthy: !(counts.documents > 0 && browseRelation.exists && browseRows === 0),
+    },
+    warnings,
+    recommended_actions: [...new Set(recommendedActions)],
+    healthy: warnings.length === 0,
+  };
+}
+
 const TOOLS = [
   {
     name: 'lore_db_status',
-    description: '获取资料库连接状态和统计信息（domains、assets、tags 数量）',
+    description: 'Get database connection status and document/text unit/entity counts.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'lore_db_categories',
-    description: '列出资料库分类树，可按 domain 过滤',
+    description: 'Browse new lore document groups from document_stats. This replaces legacy category browsing.',
     inputSchema: {
       type: 'object',
       properties: {
-        domain: { type: 'string', description: '域名，默认 arknights' },
+        query: { type: 'string', description: 'Optional terms used to count relevant text units.' },
+        source_tiers: { type: 'array', items: { type: 'number' }, description: 'Optional source tiers, e.g. [1,2].' },
+        content_types: { type: 'array', items: { type: 'string' }, description: 'Optional document content types.' },
+        top_groups: { type: 'array', items: { type: 'string' }, description: 'Optional top-level groups.' },
+        group_names: { type: 'array', items: { type: 'string' }, description: 'Optional group names.' },
+        only_relevant: { type: 'boolean', description: 'When query is set, return only documents with relevant units.' },
+        limit: { type: 'number', description: 'Default 100, max 300.' },
       },
     },
   },
   {
     name: 'lore_db_search',
-    description: '按关键词、分类、标签搜索资料库资产。返回 asset_id、标题、分类、原文摘要。',
+    description: 'Search lore database documents and text units. Returns document_id/unit_id plus legacy aliases asset_id/chunk_id.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: '搜索关键词，匹配标题和原文' },
-        category: { type: 'string', description: '分类 code 过滤。默认自动包含该分类的所有子分类' },
-        tag: { type: 'string', description: '标签值过滤' },
-        limit: { type: 'number', description: '返回数量上限，默认 50，最大 200' },
-        offset: { type: 'number', description: '分页偏移，默认 0' },
-        include_children: { type: 'boolean', description: '按分类过滤时是否自动包含子分类，默认 true' },
+        query: { type: 'string', description: 'Search terms matched against title, metadata, headings, summaries, and text.' },
+        source_tiers: { type: 'array', items: { type: 'number' } },
+        content_types: { type: 'array', items: { type: 'string' } },
+        top_groups: { type: 'array', items: { type: 'string' } },
+        group_names: { type: 'array', items: { type: 'string' } },
+        limit: { type: 'number', description: 'Default 50, max 200.' },
+        offset: { type: 'number', description: 'Default 0.' },
       },
     },
   },
   {
     name: 'lore_db_search_chunks',
-    description: '搜索原文分块（asset_chunks）。适合查找精确引用和短语。',
+    description: 'Search text_units for passage-level evidence. Returns unit_id and chunk_id compatibility alias.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: '搜索关键词' },
-        category: { type: 'string', description: '分类 code 过滤' },
-        tag: { type: 'string', description: '标签值过滤' },
-        limit: { type: 'number', description: '返回数量上限，默认 20，最大 100' },
-        offset: { type: 'number', description: '分页偏移，默认 0' },
+        query: { type: 'string', description: 'Search terms.' },
+        document_id: { type: 'number', description: 'Optional new document id.' },
+        asset_id: { type: 'number', description: 'Compatibility alias for document_id.' },
+        source_tiers: { type: 'array', items: { type: 'number' } },
+        content_types: { type: 'array', items: { type: 'string' } },
+        limit: { type: 'number', description: 'Default 20, max 100.' },
+        offset: { type: 'number', description: 'Default 0.' },
+        browse: { type: 'boolean', description: 'Set true to intentionally list chunks without a query.' },
+        list_recent: { type: 'boolean', description: 'Alias for browse.' },
       },
     },
   },
   {
     name: 'lore_db_read',
-    description: '读取完整资产（含原文、标签、媒体变体）',
+    description: 'Read one document from the lore database with all text_units. asset_id is accepted as document_id alias.',
     inputSchema: {
       type: 'object',
       properties: {
-        asset_id: { type: 'number', description: '资产 ID' },
+        document_id: { type: 'number', description: 'New document id.' },
+        asset_id: { type: 'number', description: 'Compatibility alias for document_id.' },
+        include_units: { type: 'boolean', description: 'Default true.' },
       },
-      required: ['asset_id'],
     },
   },
   {
     name: 'lore_db_read_context',
-    description: '展开 chunk 周围的上下文（前后各 N 个 chunk）',
+    description: 'Read text_units around a unit_id. chunk_id is accepted as unit_id alias.',
     inputSchema: {
       type: 'object',
       properties: {
-        chunk_id: { type: 'number', description: '块 ID' },
-        radius: { type: 'number', description: '前后半径，默认 2，最大 10' },
+        unit_id: { type: 'number', description: 'New text unit id.' },
+        chunk_id: { type: 'number', description: 'Compatibility alias for unit_id.' },
+        radius: { type: 'number', description: 'Default 2, max 10.' },
       },
-      required: ['chunk_id'],
     },
   },
   {
     name: 'lore_db_find_tags',
-    description: '搜索标签（按值、别名、描述），支持模糊匹配',
+    description: 'Resolve entities and aliases. This replaces legacy tag lookup.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: '搜索关键词（可选，不传则列出热门标签）' },
-        dim_code: { type: 'string', description: '标签维度过滤，如 CHARACTER, FACTION, EVENT' },
-        limit: { type: 'number', description: '返回数量上限，默认 30，最大 100' },
+        query: { type: 'string', description: 'Entity name or alias.' },
+        entity_type: { type: 'string', description: 'Optional entity type filter.' },
+        dim_code: { type: 'string', description: 'Compatibility alias for entity_type.' },
+        limit: { type: 'number', description: 'Default 30, max 100.' },
       },
     },
   },
   {
     name: 'lore_db_search_by_tags',
-    description: '按多个标签联合过滤资产（AND/OR 模式）',
+    description: 'Find documents by entity names or aliases. tags are interpreted as entities.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -376,980 +314,625 @@ const TOOLS = [
           items: {
             type: 'object',
             properties: {
-              value: { type: 'string', description: '标签值' },
-              dim_code: { type: 'string', description: '标签维度' },
+              value: { type: 'string' },
+              entity_id: { type: 'number' },
+              dim_code: { type: 'string' },
+              entity_type: { type: 'string' },
             },
           },
-          description: '标签列表',
         },
-        mode: { type: 'string', description: 'all=必须全部匹配, any=匹配任意一个。默认 any' },
-        limit: { type: 'number', description: '返回数量上限，默认 50，最大 200' },
+        mode: { type: 'string', description: 'all or any. Default any.' },
+        limit: { type: 'number', description: 'Default 50, max 200.' },
       },
       required: ['tags'],
     },
   },
   {
-    name: 'lore_db_tag_neighbors',
-    description: '查看标签的邻居标签（显式关系 + 共现关系）',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        tag_id: { type: 'number', description: '标签 ID' },
-        tag_value: { type: 'string', description: '标签值（如果没有 tag_id）' },
-        dim_code: { type: 'string', description: '限定维度（与 tag_value 配合使用）' },
-        include_relations: { type: 'boolean', description: '是否包含显式关系邻居，默认 true' },
-        include_cooccurrence: { type: 'boolean', description: '是否包含共现邻居，默认 true' },
-        limit: { type: 'number', description: '返回数量上限，默认 40，最大 200' },
-      },
-    },
-  },
-  {
-    name: 'lore_db_related_assets',
-    description: '通过标签关系查找与某个标签相关的资产',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        tag_id: { type: 'number', description: '标签 ID' },
-        tag_value: { type: 'string', description: '标签值（如果没有 tag_id）' },
-        dim_code: { type: 'string', description: '限定维度（与 tag_value 配合使用）' },
-        relation_depth: { type: 'number', description: '关系深度 0-2，默认 1' },
-        limit: { type: 'number', description: '返回数量上限，默认 50，最大 200' },
-      },
-    },
-  },
-  {
-    name: 'lore_db_list_relations',
-    description: '列出标签之间的关系',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        source_tag_id: { type: 'number', description: '源标签 ID' },
-        target_tag_id: { type: 'number', description: '目标标签 ID' },
-        rel_type: { type: 'string', description: '关系类型过滤' },
-        review_status: { type: 'string', description: '审核状态过滤：pending, approved, rejected, needs_review' },
-        limit: { type: 'number', description: '返回数量上限，默认 50，最大 200' },
-      },
-    },
-  },
-  {
-    name: 'lore_db_relation_evidence',
-    description: '读取关系证据详情（包含关联资产）',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        rel_id: { type: 'number', description: '关系 ID' },
-      },
-      required: ['rel_id'],
-    },
-  },
-  {
-    name: 'lore_db_list_category_notes',
-    description: '列出某个分类的备注',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        category_id: { type: 'number', description: '分类 ID' },
-      },
-      required: ['category_id'],
-    },
-  },
-  {
     name: 'lore_db_search_fts',
-    description: 'PostgreSQL全文排名搜索，比ILIKE更快更精准。支持& (AND), | (OR), ! (NOT)布尔运算。中文词之间用&连接。示例: "莱茵&生命" "塞雷娅&实验" "罗德岛|巴别塔"',
+    description: 'Ranked evidence search backed by search_evidence_optimized on the lore database.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'FTS查询。用&做AND, |做OR, !做NOT。单个词也可以。' },
-        category: { type: 'string', description: '分类code过滤（可选）' },
-        limit: { type: 'number', description: '返回数量上限，默认50，最大200' },
+        query: { type: 'string', description: 'Search terms. Operators such as & are tolerated as separators.' },
+        source_tiers: { type: 'array', items: { type: 'number' } },
+        content_types: { type: 'array', items: { type: 'string' } },
+        document_ids: { type: 'array', items: { type: 'number' } },
+        group_names: { type: 'array', items: { type: 'string' } },
+        top_groups: { type: 'array', items: { type: 'string' } },
+        title_contains: { type: 'array', items: { type: 'string' } },
+        limit: { type: 'number', description: 'Default 50, max 200.' },
       },
       required: ['query'],
     },
   },
   {
     name: 'lore_db_entity_cooccurrence',
-    description: '查找多个实体/关键词同时出现的资产。用于交叉验证：某个声明是否在多个来源中出现？两个角色在哪些故事线中同时登场？支持最少匹配数过滤。',
+    description: 'Find documents where multiple entity names/aliases co-occur.',
     inputSchema: {
       type: 'object',
       properties: {
-        entities: {
-          type: 'array',
-          items: { type: 'string' },
-          description: '实体名或关键词列表。如 ["莱茵生命", "塞雷娅", "赫默"]',
-        },
-        min_matches: { type: 'number', description: '最少匹配实体数，默认2。设为1等同于普通搜索。' },
-        limit: { type: 'number', description: '返回数量上限，默认50，最大100' },
+        entities: { type: 'array', items: { type: 'string' } },
+        min_matches: { type: 'number', description: 'Default 2.' },
+        limit: { type: 'number', description: 'Default 50, max 100.' },
       },
       required: ['entities'],
     },
   },
   {
     name: 'lore_db_search_stats',
-    description: '获取搜索查询的统计信息：按分类分布、叙事层级分布、最相关标签。用于在深入搜索前了解资料全貌，规划搜索策略。',
+    description: 'Return summary counts for a query across documents, content types, tiers, groups, and entities.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: '搜索词' },
-        category: { type: 'string', description: '分类过滤（可选）' },
+        query: { type: 'string', description: 'Search terms.' },
+        limit: { type: 'number', description: 'Default 30, max 100.' },
       },
-      required: ['query'],
     },
   },
 ];
 
-// ── Handlers ──────────────────────────────────────────────────────────────
-
 async function handleStatus() {
-  try {
-    const version = await query('SELECT version() AS version');
-    const exists = await query(
-      'SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1) AS exists',
-      [SCHEMA],
-    );
-    const schemaExists = exists.rows[0]?.exists;
-    let domainCount = 0, assetCount = 0, tagCount = 0, chunkCount = 0;
-    if (schemaExists) {
-      const counts = await query(
-        `SELECT
-           (SELECT COUNT(*) FROM ${quoteIdent(SCHEMA)}.domains)::int AS domains,
-           (SELECT COUNT(*) FROM ${quoteIdent(SCHEMA)}.assets)::int AS assets,
-           (SELECT COUNT(*) FROM ${quoteIdent(SCHEMA)}.tags)::int AS tags`,
-      );
-      domainCount = counts.rows[0]?.domains || 0;
-      assetCount = counts.rows[0]?.assets || 0;
-      tagCount = counts.rows[0]?.tags || 0;
-      const chunkTable = await query(
-        `SELECT to_regclass($1) IS NOT NULL AS exists`,
-        [`${SCHEMA}.asset_chunks`],
-      );
-      if (chunkTable.rows[0]?.exists) {
-        const chunks = await query(
-          `SELECT COUNT(*)::int AS chunks FROM ${quoteIdent(SCHEMA)}.asset_chunks`,
-        );
-        chunkCount = chunks.rows[0]?.chunks || 0;
-      }
-    }
+  const counts = await query(`
+    SELECT
+      current_database() AS database,
+      (SELECT COUNT(*) FROM documents)::int AS documents,
+      (SELECT COUNT(*) FROM text_units)::int AS text_units,
+      (SELECT COUNT(*) FROM entities)::int AS entities,
+      (SELECT COUNT(*) FROM entity_aliases)::int AS entity_aliases,
+      (SELECT COUNT(*) FROM entity_mentions)::int AS entity_mentions,
+      to_regproc('public.search_evidence_optimized') IS NOT NULL AS has_search_evidence_optimized,
+      to_regproc('public.browse_tree_optimized') IS NOT NULL AS has_browse_tree_optimized,
+      to_regclass('public.document_stats') IS NOT NULL AS has_document_stats
+  `);
+  const row = counts.rows[0];
+  return {
+    ok: true,
+    runtime: DB_CONFIG.database || 'lore_db',
+    legacy_runtime_disabled: true,
+    tools: TOOLS.map(t => t.name),
+    ...row,
+    cache_health: await getCacheHealth(row),
+  };
+}
+
+async function handleCategories(args = {}) {
+  const limit = clampLimit(args.limit, 100, 300);
+  const health = await getCacheHealth();
+  if (health.tables.documents > 0 && health.browse_cache.exists && !health.browse_cache.healthy) {
     return {
-      ok: true,
-      connected: true,
-      serverVersion: version.rows[0]?.version,
-      schemaExists,
-      domainCount,
-      assetCount,
-      tagCount,
-      chunkCount,
+      rows: [],
+      total: 0,
+      warning: 'browse_cache_empty_but_documents_exist',
+      recommended_action: 'refresh_document_stats',
+      cache_health: health,
     };
-  } catch (err) {
-    return { ok: false, connected: false, error: err.message };
   }
-}
-
-async function handleCategories(args) {
-  const domain = args.domain || 'arknights';
   const result = await query(
-    `SELECT c.category_id, c.parent_category_id, c.category_code, c.category_name, c.category_kind,
-            c.description, c.sort_order,
-            (SELECT COUNT(*) FROM ${quoteIdent(SCHEMA)}.category_notes cn WHERE cn.category_id = c.category_id)::int AS note_count
-     FROM ${quoteIdent(SCHEMA)}.categories c
-     JOIN ${quoteIdent(SCHEMA)}.domains d ON d.domain_id = c.domain_id
-     WHERE d.domain_code = $1
-     ORDER BY c.parent_category_id NULLS FIRST, c.sort_order, c.category_name`,
-    [domain],
+    `SELECT * FROM browse_tree_optimized($1::text[], $2::smallint[], $3::text[], $4::text[], $5::text[], $6::boolean, $7::integer)`,
+    [
+      termsForBrowse(args.query),
+      smallintArray(args.source_tiers),
+      stringArray(args.content_types),
+      stringArray(args.top_groups),
+      stringArray(args.group_names),
+      Boolean(args.only_relevant),
+      limit,
+    ],
   );
-  return result.rows;
+  return { rows: result.rows, total: result.rows.length, cache_health: health };
 }
 
-async function handleSearch(args) {
-  const domainCode = 'arknights';
-  const limit = Math.min(Math.max(Number(args.limit || 50), 1), 200);
+async function handleSearchFTS(args = {}) {
+  const rawQuery = String(args.query || '').trim();
+  if (!rawQuery) return { rows: [], total: 0 };
+  const limit = clampLimit(args.limit, 50, 200);
+  const result = await query(
+    `SELECT *, document_id AS asset_id, unit_id AS chunk_id
+     FROM search_evidence_optimized($1::text, $2::smallint[], $3::text[], $4::bigint[], $5::text[], $6::text[], $7::text[], $8::integer)`,
+    [
+      rawQuery,
+      smallintArray(args.source_tiers),
+      stringArray(args.content_types),
+      Array.isArray(args.document_ids) ? args.document_ids.map(Number).filter(Number.isFinite) : null,
+      stringArray(args.group_names),
+      stringArray(args.top_groups),
+      stringArray(args.title_contains),
+      limit,
+    ],
+  );
+  return { rows: result.rows, total: result.rows.length };
+}
+
+async function handleSearch(args = {}) {
+  const rawQuery = String(args.query || '').trim();
+  if (!rawQuery) return handleCategories({ ...args, only_relevant: false, limit: args.limit || 50 });
+
   const offset = Math.max(Number(args.offset || 0), 0);
-  const includeChildren = args.include_children !== false;
-  const schema = quoteIdent(SCHEMA);
+  const limit = clampLimit(args.limit, 50, 200);
+  const values = [
+    rawQuery,
+    smallintArray(args.source_tiers),
+    stringArray(args.content_types),
+    stringArray(args.top_groups),
+    stringArray(args.group_names),
+    limit,
+    offset,
+  ];
+  const result = await query(
+    `WITH evidence AS (
+       SELECT *
+       FROM search_evidence_optimized($1::text, $2::smallint[], $3::text[], NULL::bigint[], $5::text[], $4::text[], NULL::text[], $6::integer + $7::integer + 25)
+     ),
+     ranked AS (
+       SELECT DISTINCT ON (e.document_id)
+         e.document_id,
+         e.document_id AS asset_id,
+         e.unit_id,
+         e.unit_id AS chunk_id,
+         e.unit_index,
+         e.document_title AS title,
+         e.subtitle,
+         e.source_name,
+         e.source_uri,
+         e.source_uri AS source_url,
+         e.source_tier,
+         e.content_type,
+         e.canon_status,
+         e.top_group,
+         e.group_name,
+         e.operator_name,
+         e.text_preview,
+         e.summary_short,
+         e.evidence_lane,
+         e.score
+       FROM evidence e
+       ORDER BY e.document_id, e.score DESC, e.unit_index ASC
+     )
+     SELECT *
+     FROM ranked
+     ORDER BY score DESC, source_tier ASC, document_id ASC
+     LIMIT $6 OFFSET $7`,
+    values,
+  );
+  return { rows: result.rows, total: result.rows.length };
+}
+
+async function handleSearchChunks(args = {}) {
+  const rawQuery = String(args.query || '').trim();
+  const documentId = documentIdFromArgs(args);
+  const limit = clampLimit(args.limit, 20, 100);
+  const offset = Math.max(Number(args.offset || 0), 0);
+
+  if (!rawQuery && !documentId && !args.browse && !args.list_recent) {
+    return {
+      rows: [],
+      total: 0,
+      warning: 'query_or_document_id_required',
+      message: 'Pass query/document_id for evidence search, or set browse/list_recent=true to intentionally list sample chunks.',
+    };
+  }
 
   const clauses = [];
-  const values = [domainCode];
-  clauses.push(`d.domain_code = $1`);
-
-  // Category filter
-  if (args.category) {
-    values.push(args.category);
-    values.push(domainCode);
-    if (includeChildren) {
-      clauses.push(`c.category_id IN (
-        WITH RECURSIVE sub AS (
-          SELECT c2.category_id FROM ${schema}.categories c2
-          JOIN ${schema}.domains d2 ON d2.domain_id = c2.domain_id
-          WHERE c2.category_code = $${values.length - 1} AND d2.domain_code = $${values.length}
-          UNION ALL
-          SELECT c3.category_id FROM ${schema}.categories c3 JOIN sub s ON c3.parent_category_id = s.category_id
-        )
-        SELECT category_id FROM sub
-      )`);
-    } else {
-      clauses.push(`c.category_code = $${values.length - 1}`);
-    }
-  }
-
-  const queryParamIndex = args.query ? values.length + 1 : null;
-  if (args.query) {
-    values.push(`%${args.query}%`);
-    clauses.push(`(a.title ILIKE $${values.length} OR a.subtitle ILIKE $${values.length} OR tc.full_text ILIKE $${values.length})`);
-  }
-  if (args.tag) {
-    values.push(args.tag);
-    clauses.push(`EXISTS (
-      SELECT 1 FROM ${schema}.asset_tags at
-      JOIN ${schema}.tags t ON t.tag_id = at.tag_id
-     WHERE at.asset_id = a.asset_id
-        AND at.deleted_at IS NULL
-        AND (t.tag_value = $${values.length} OR t.canonical = $${values.length})
-    )`);
-  }
-
-  const whereClause = clauses.join(' AND ');
-
-  // Count
-  const countResult = await query(
-    `SELECT COUNT(*)::int AS total
-     FROM ${schema}.assets a
-     JOIN ${schema}.domains d ON d.domain_id = a.domain_id
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     WHERE ${whereClause}`,
-    values,
-  );
-  const total = countResult.rows[0]?.total ?? 0;
-
-  // Order
-  let orderClause = 'a.updated_at DESC';
-  if (args.query && queryParamIndex !== null) {
-    orderClause = `CASE WHEN a.title ILIKE $${queryParamIndex} THEN 0 WHEN a.subtitle ILIKE $${queryParamIndex} THEN 1 ELSE 2 END, a.updated_at DESC`;
-  }
-
-  values.push(limit);
-  values.push(offset);
-
-  const result = await query(
-    `SELECT a.asset_id, a.asset_kind, a.title, a.subtitle, a.external_key,
-            a.source_name, a.source_url, a.source_path, a.object_uri,
-            a.mime_type, a.language_code, a.created_at, a.updated_at,
-            c.category_code, c.category_name,
-            tc.carrier_type, tc.character_name, tc.activity_name,
-            LEFT(tc.full_text, 120) AS text_preview
-     FROM ${schema}.assets a
-     JOIN ${schema}.domains d ON d.domain_id = a.domain_id
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     WHERE ${whereClause}
-     ORDER BY ${orderClause}
-     LIMIT $${values.length - 1}
-     OFFSET $${values.length}`,
-    values,
-  );
-  return { rows: result.rows, total };
-}
-
-async function handleSearchChunks(args) {
-  const domainCode = 'arknights';
-  const limit = Math.min(Math.max(Number(args.limit || 20), 1), 100);
-  const offset = Math.max(Number(args.offset || 0), 0);
-  const schema = quoteIdent(SCHEMA);
-
-  const clauses = [];
-  const values = [domainCode];
-  clauses.push(`d.domain_code = $1`);
-  clauses.push(`ac.deleted_at IS NULL`);
-
-  if (args.category) {
-    values.push(args.category);
-    values.push(domainCode);
-    clauses.push(`c.category_id IN (
-      WITH RECURSIVE sub AS (
-        SELECT c2.category_id FROM ${schema}.categories c2
-        JOIN ${schema}.domains d2 ON d2.domain_id = c2.domain_id
-        WHERE c2.category_code = $${values.length - 1} AND d2.domain_code = $${values.length}
-        UNION ALL
-        SELECT c3.category_id FROM ${schema}.categories c3 JOIN sub s ON c3.parent_category_id = s.category_id
-      )
-      SELECT category_id FROM sub
-    )`);
-  }
-
-  if (args.tag) {
-    values.push(args.tag);
-    clauses.push(`EXISTS (
-      SELECT 1 FROM ${schema}.asset_tags at2
-      JOIN ${schema}.tags t2 ON t2.tag_id = at2.tag_id
-      WHERE at2.asset_id = a.asset_id
-        AND at2.deleted_at IS NULL
-        AND (t2.tag_value = $${values.length} OR t2.canonical = $${values.length})
-    )`);
-  }
-
-  const searchTerm = args.query?.trim();
-  if (searchTerm) {
-    values.push(`%${searchTerm}%`);
-    clauses.push(`(
-      ac.chunk_text ILIKE $${values.length}
-      OR ac.heading ILIKE $${values.length}
-      OR EXISTS (
-        SELECT 1 FROM ${schema}.assets a2
-        WHERE a2.asset_id = a.asset_id AND a2.title ILIKE $${values.length}
-      )
-    )`);
-  }
-
-  const whereClause = clauses.join(' AND ');
-
-  // Count
-  const countResult = await query(
-    `SELECT COUNT(*)::int AS total
-     FROM ${schema}.asset_chunks ac
-     JOIN ${schema}.assets a ON a.asset_id = ac.asset_id
-     JOIN ${schema}.domains d ON d.domain_id = a.domain_id
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     WHERE ${whereClause}`,
-    values,
-  );
-  const total = countResult.rows[0]?.total ?? 0;
-
-  values.push(limit);
-  values.push(offset);
-
-  const result = await query(
-    `SELECT ac.chunk_id, ac.asset_id, ac.chunk_index, ac.heading, ac.speaker,
-            ac.start_offset, ac.end_offset, ac.token_estimate,
-            LEFT(ac.chunk_text, 300) AS chunk_preview,
-            a.title AS asset_title, a.asset_kind,
-            c.category_code, c.category_name,
-            tc.character_name, tc.activity_name
-     FROM ${schema}.asset_chunks ac
-     JOIN ${schema}.assets a ON a.asset_id = ac.asset_id
-     JOIN ${schema}.domains d ON d.domain_id = a.domain_id
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     WHERE ${whereClause}
-     ORDER BY ac.chunk_index
-     LIMIT $${values.length - 1}
-     OFFSET $${values.length}`,
-    values,
-  );
-  return { rows: result.rows, total };
-}
-
-async function handleRead(args) {
-  const schema = quoteIdent(SCHEMA);
-  const asset = await query(
-    `SELECT a.*, c.category_code, c.category_name,
-            tc.full_text, tc.char_count, tc.carrier_type, tc.narrative_layer,
-            tc.mission_code, tc.character_name, tc.activity_name, tc.item_name,
-            tc.skin_name, tc.enemy_name, tc.text_metadata
-     FROM ${schema}.assets a
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     WHERE a.asset_id = $1`,
-    [args.asset_id],
-  );
-  if (!asset.rows[0]) return { error: `Asset not found: ${args.asset_id}` };
-
-  const tags = await query(
-    `SELECT t.tag_id, td.dim_code, td.dim_name, t.tag_value, t.canonical, t.aliases,
-            at.confidence, at.annotated_by, at.review_status, at.evidence, at.note
-     FROM ${schema}.asset_tags at
-     JOIN ${schema}.tags t ON t.tag_id = at.tag_id
-     JOIN ${schema}.tag_dimensions td ON td.dim_id = t.dim_id
-     WHERE at.asset_id = $1 AND at.deleted_at IS NULL
-     ORDER BY td.sort_order, t.tag_value`,
-    [args.asset_id],
-  );
-
-  const variants = await query(
-    `SELECT * FROM ${schema}.media_variants WHERE asset_id = $1 ORDER BY variant_kind, variant_id`,
-    [args.asset_id],
-  );
-
-  return { ...asset.rows[0], tags: tags.rows, variants: variants.rows };
-}
-
-async function handleReadContext(args) {
-  const radius = Math.min(Math.max(Number(args.radius || 2), 0), 10);
-  const schema = quoteIdent(SCHEMA);
-
-  const anchor = await query(
-    `SELECT asset_id, chunk_index FROM ${schema}.asset_chunks WHERE chunk_id = $1`,
-    [args.chunk_id],
-  );
-  if (!anchor.rows[0]) return { error: `Chunk not found: ${args.chunk_id}` };
-
-  const { asset_id, chunk_index } = anchor.rows[0];
-
-  const asset = await query(
-    `SELECT a.asset_id, a.asset_kind, a.title, a.subtitle, a.source_name, a.source_url,
-            c.category_code, c.category_name, tc.carrier_type, tc.character_name, tc.activity_name
-     FROM ${schema}.assets a
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     WHERE a.asset_id = $1`,
-    [asset_id],
-  );
-
-  const chunks = await query(
-    `SELECT chunk_id, chunk_index, heading, speaker, chunk_text, start_offset, end_offset, token_estimate
-     FROM ${schema}.asset_chunks
-     WHERE asset_id = $1 AND deleted_at IS NULL AND chunk_index BETWEEN $2 AND $3
-     ORDER BY chunk_index`,
-    [asset_id, chunk_index - radius, chunk_index + radius],
-  );
-
-  return { asset: asset.rows[0] || null, anchorChunkId: args.chunk_id, radius, chunks: chunks.rows };
-}
-
-async function handleFindTags(args) {
-  const limit = Math.min(Math.max(Number(args.limit || 30), 1), 100);
-  const searchTerm = args.query?.trim() || null;
-  const schema = quoteIdent(SCHEMA);
   const values = [];
-  const clauses = [];
-
-  if (searchTerm) {
-    values.push(`%${searchTerm}%`);
+  if (rawQuery) {
+    values.push(`%${rawQuery}%`);
     clauses.push(`(
-      t.tag_value ILIKE $${values.length}
-      OR t.canonical ILIKE $${values.length}
-      OR t.description ILIKE $${values.length}
-      OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(t.aliases) a(alias) WHERE a.alias ILIKE $${values.length})
+      d.title ILIKE $${values.length}
+      OR d.subtitle ILIKE $${values.length}
+      OR tu.heading ILIKE $${values.length}
+      OR tu.speaker ILIKE $${values.length}
+      OR tu.scene_code ILIKE $${values.length}
+      OR tu.text ILIKE $${values.length}
+      OR tu.metadata->>'summary' ILIKE $${values.length}
+      OR tu.metadata->>'summary_short' ILIKE $${values.length}
     )`);
   }
-
-  if (args.dim_code?.trim()) {
-    values.push(args.dim_code.trim());
-    clauses.push(`td.dim_code = $${values.length}`);
+  if (documentId) {
+    values.push(documentId);
+    clauses.push(`tu.document_id = $${values.length}`);
   }
-
+  const sourceTiers = smallintArray(args.source_tiers);
+  if (sourceTiers) {
+    values.push(sourceTiers);
+    clauses.push(`d.source_tier = ANY($${values.length}::smallint[])`);
+  }
+  const contentTypes = stringArray(args.content_types);
+  if (contentTypes) {
+    values.push(contentTypes);
+    clauses.push(`d.content_type = ANY($${values.length}::text[])`);
+  }
+  values.push(limit, offset);
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  values.push(limit);
 
   const result = await query(
     `SELECT
-       t.tag_id, td.dim_code, td.dim_name, t.tag_value, t.canonical, t.aliases,
-       t.description, t.doc_count, t.media_count, t.total_asset_count
-     FROM ${schema}.tags t
-     JOIN ${schema}.tag_dimensions td ON td.dim_id = t.dim_id
+       tu.unit_id,
+       tu.unit_id AS chunk_id,
+       tu.document_id,
+       tu.document_id AS asset_id,
+       tu.unit_index,
+       tu.unit_kind,
+       tu.heading,
+       tu.speaker,
+       tu.scene_code,
+       LEFT(tu.text, 900) AS text_preview,
+       LEFT(tu.text, 900) AS chunk_text,
+       tu.metadata->>'summary_short' AS summary_short,
+       tu.metadata->>'summary' AS summary,
+       tu.review_status,
+       d.title AS document_title,
+       d.title,
+       d.subtitle,
+       d.source_name,
+       d.source_uri,
+       d.source_uri AS source_url,
+       d.source_tier,
+       d.content_type
+     FROM text_units tu
+     JOIN documents d ON d.document_id = tu.document_id
      ${where}
-     ORDER BY t.total_asset_count DESC, td.sort_order, t.tag_value
-     LIMIT $${values.length}`,
-    values,
-  );
-  return result.rows;
-}
-
-async function handleSearchByTags(args) {
-  const tags = args.tags || [];
-  if (!tags.length) return { rows: [], total: 0, error: 'tags required' };
-
-  const mode = args.mode || 'any';
-  const limit = Math.min(Math.max(Number(args.limit || 50), 1), 200);
-  const schema = quoteIdent(SCHEMA);
-
-  const tagIds = [];
-  for (const t of tags) {
-    let found;
-    if (t.dim_code) {
-      found = await query(
-        `SELECT t.tag_id FROM ${schema}.tags t
-         JOIN ${schema}.tag_dimensions td ON td.dim_id = t.dim_id
-         WHERE (t.tag_value = $1 OR t.canonical = $1) AND td.dim_code = $2
-         ORDER BY t.total_asset_count DESC LIMIT 1`,
-        [t.value, t.dim_code],
-      );
-    } else {
-      found = await query(
-        `SELECT t.tag_id FROM ${schema}.tags t
-         WHERE t.tag_value = $1 OR t.canonical = $1
-         ORDER BY t.total_asset_count DESC LIMIT 1`,
-        [t.value],
-      );
-    }
-    if (found.rows[0]) tagIds.push(found.rows[0].tag_id);
-  }
-
-  if (!tagIds.length) return { rows: [], total: 0, hint: 'No matching tags found' };
-
-  const havingClause = mode === 'all'
-    ? `HAVING COUNT(DISTINCT at.tag_id) = ${tagIds.length}`
-    : '';
-
-  const result = await query(
-    `SELECT a.asset_id, a.asset_kind, a.title, a.subtitle, a.source_name,
-            c.category_code, c.category_name,
-            tc.carrier_type, tc.character_name, tc.activity_name,
-            LEFT(tc.full_text, 120) AS text_preview,
-            COUNT(DISTINCT at.tag_id)::int AS matched_tag_count
-     FROM ${schema}.asset_tags at
-     JOIN ${schema}.assets a ON a.asset_id = at.asset_id
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     WHERE at.tag_id = ANY($1) AND at.review_status <> 'rejected' AND at.deleted_at IS NULL
-     GROUP BY a.asset_id, a.asset_kind, a.title, a.subtitle, a.source_name,
-              c.category_code, c.category_name, tc.carrier_type, tc.character_name, tc.activity_name, tc.full_text
-     ${havingClause}
-     ORDER BY COUNT(DISTINCT at.tag_id) DESC, a.updated_at DESC
-     LIMIT $2`,
-    [tagIds, limit],
-  );
-
-  return {
-    rows: result.rows,
-    total: result.rows.length,
-    matched_tag_ids: tagIds,
-    mode,
-  };
-}
-
-async function handleTagNeighbors(args) {
-  const limit = Math.min(Math.max(Number(args.limit || 40), 1), 200);
-  const includeRelations = args.include_relations !== false;
-  const includeCooccurrence = args.include_cooccurrence !== false;
-  const schema = quoteIdent(SCHEMA);
-
-  let selector = '';
-  const values = [];
-  if (args.tag_id) {
-    values.push(args.tag_id);
-    selector = `t.tag_id = $1`;
-  } else if (args.tag_value?.trim()) {
-    values.push(args.tag_value.trim());
-    selector = `(t.tag_value = $1 OR t.canonical = $1)`;
-    if (args.dim_code?.trim()) {
-      values.push(args.dim_code.trim());
-      selector += ` AND td.dim_code = $2`;
-    }
-  } else {
-    return { tag: null, relations: [], cooccurrence: [], error: 'tag_id or tag_value required' };
-  }
-
-  const tagResult = await query(
-    `SELECT t.tag_id, td.dim_code, td.dim_name, t.tag_value, t.canonical, t.aliases,
-            t.description, t.doc_count, t.media_count, t.total_asset_count
-     FROM ${schema}.tags t
-     JOIN ${schema}.tag_dimensions td ON td.dim_id = t.dim_id
-     WHERE ${selector}
-     ORDER BY t.total_asset_count DESC, t.tag_value
-     LIMIT 1`,
-    values,
-  );
-  const tag = tagResult.rows[0];
-  if (!tag?.tag_id) return { tag: null, relations: [], cooccurrence: [] };
-
-  const relValues = [tag.tag_id];
-  if (args.rel_type?.trim()) {
-    relValues.push(args.rel_type.trim());
-  }
-  relValues.push(limit);
-
-  let relations = [];
-  if (includeRelations) {
-    relations = (await query(
-      `SELECT tr.rel_id, tr.rel_type, tr.is_bidirectional, tr.confidence,
-              tr.review_status, tr.evidence,
-              CASE WHEN tr.source_tag_id = $1 THEN 'target' ELSE 'source' END AS direction,
-              CASE WHEN tr.source_tag_id = $1 THEN tt.tag_id ELSE st.tag_id END AS neighbor_tag_id,
-              CASE WHEN tr.source_tag_id = $1 THEN tt.tag_value ELSE st.tag_value END AS neighbor_tag_value,
-              CASE WHEN tr.source_tag_id = $1 THEN ttd.dim_code ELSE std.dim_code END AS neighbor_dim_code
-       FROM ${schema}.tag_relations tr
-       JOIN ${schema}.tags st ON st.tag_id = tr.source_tag_id
-       JOIN ${schema}.tag_dimensions std ON std.dim_id = st.dim_id
-       JOIN ${schema}.tags tt ON tt.tag_id = tr.target_tag_id
-       JOIN ${schema}.tag_dimensions ttd ON ttd.dim_id = tt.dim_id
-       WHERE (tr.source_tag_id = $1 OR tr.target_tag_id = $1)
-       ${args.rel_type?.trim() ? `AND tr.rel_type = $2` : ''}
-       AND tr.review_status <> 'rejected'
-       ORDER BY tr.confidence DESC, tr.updated_at DESC
-       LIMIT $${relValues.length}`,
-      relValues,
-    )).rows;
-  }
-
-  let cooccurrence = [];
-  if (includeCooccurrence) {
-    cooccurrence = (await query(
-      `SELECT CASE WHEN tc.tag_a_id = $1 THEN tc.tag_b_id ELSE tc.tag_a_id END AS neighbor_tag_id,
-              t.tag_value AS neighbor_tag_value, td.dim_code AS neighbor_dim_code,
-              tc.cooccurrence_count, tc.normalized_score
-       FROM ${schema}.tag_cooccurrence tc
-       JOIN ${schema}.tags t ON t.tag_id = CASE WHEN tc.tag_a_id = $1 THEN tc.tag_b_id ELSE tc.tag_a_id END
-       JOIN ${schema}.tag_dimensions td ON td.dim_id = t.dim_id
-       WHERE (tc.tag_a_id = $1 OR tc.tag_b_id = $1)
-       ORDER BY tc.normalized_score DESC
-       LIMIT $2`,
-      [tag.tag_id, limit],
-    )).rows;
-  }
-
-  return { tag, relations, cooccurrence };
-}
-
-async function handleRelatedAssets(args) {
-  const limit = Math.min(Math.max(Number(args.limit || 50), 1), 200);
-  const relationDepth = Math.min(Math.max(Number(args.relation_depth ?? 1), 0), 2);
-  const schema = quoteIdent(SCHEMA);
-
-  let selector = '';
-  const values = [];
-  if (args.tag_id) {
-    values.push(args.tag_id);
-    selector = `t.tag_id = $1`;
-  } else if (args.tag_value?.trim()) {
-    values.push(args.tag_value.trim());
-    selector = `(t.tag_value = $1 OR t.canonical = $1)`;
-    if (args.dim_code?.trim()) {
-      values.push(args.dim_code.trim());
-      selector += ` AND td.dim_code = $2`;
-    }
-  } else {
-    return { rows: [], total: 0, error: 'tag_id or tag_value required' };
-  }
-
-  values.push(limit);
-  const result = await query(
-    `WITH RECURSIVE root_tag AS (
-       SELECT t.tag_id
-       FROM ${schema}.tags t
-       JOIN ${schema}.tag_dimensions td ON td.dim_id = t.dim_id
-       WHERE ${selector}
-       ORDER BY t.total_asset_count DESC, t.tag_value
-       LIMIT 1
-     ),
-     expanded_tags(tag_id, depth) AS (
-       SELECT tag_id, 0 FROM root_tag
-       UNION
-       SELECT neighbors.neighbor_tag_id AS tag_id, et.depth + 1
-       FROM expanded_tags et
-       JOIN LATERAL (
-          SELECT CASE WHEN tr.source_tag_id = et.tag_id THEN tr.target_tag_id ELSE tr.source_tag_id END AS neighbor_tag_id
-          FROM ${schema}.tag_relations tr
-          WHERE (tr.source_tag_id = et.tag_id OR tr.target_tag_id = et.tag_id)
-            AND tr.review_status <> 'rejected'
-          UNION
-          SELECT CASE WHEN tc.tag_a_id = et.tag_id THEN tc.tag_b_id ELSE tc.tag_a_id END AS neighbor_tag_id
-          FROM ${schema}.tag_cooccurrence tc
-          WHERE tc.tag_a_id = et.tag_id OR tc.tag_b_id = et.tag_id
-       ) neighbors ON TRUE
-       WHERE et.depth < ${relationDepth}
-     ),
-     ranked_assets AS (
-       SELECT at.asset_id, MIN(et.depth)::int AS relation_depth, COUNT(DISTINCT et.tag_id)::int AS matched_tag_count
-       FROM ${schema}.asset_tags at
-       JOIN expanded_tags et ON et.tag_id = at.tag_id
-       WHERE at.review_status <> 'rejected' AND at.deleted_at IS NULL
-       GROUP BY at.asset_id
-     )
-     SELECT
-       a.asset_id, a.asset_kind, a.title, a.subtitle, a.source_name, a.source_url,
-       c.category_code, c.category_name,
-       tc.carrier_type, tc.character_name, tc.activity_name,
-       LEFT(tc.full_text, 120) AS text_preview,
-       ra.relation_depth, ra.matched_tag_count
-     FROM ranked_assets ra
-     JOIN ${schema}.assets a ON a.asset_id = ra.asset_id
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     ORDER BY ra.relation_depth, ra.matched_tag_count DESC
-     LIMIT $${values.length}`,
+     ORDER BY
+       CASE WHEN $${values.length - 1}::int IS NULL THEN 0 ELSE 0 END,
+       d.source_tier ASC,
+       tu.document_id ASC,
+       tu.unit_index ASC
+     LIMIT $${values.length - 1} OFFSET $${values.length}`,
     values,
   );
   return { rows: result.rows, total: result.rows.length };
 }
 
-async function handleListRelations(args) {
-  const limit = Math.min(Math.max(Number(args.limit || 50), 1), 200);
-  const schema = quoteIdent(SCHEMA);
-  const values = [];
-  const clauses = [];
+async function handleRead(args = {}) {
+  const documentId = documentIdFromArgs(args);
+  if (!documentId) return { error: 'document_id or asset_id is required' };
 
-  if (args.source_tag_id) {
-    values.push(args.source_tag_id);
-    clauses.push(`tr.source_tag_id = $${values.length}`);
-  }
-  if (args.target_tag_id) {
-    values.push(args.target_tag_id);
-    clauses.push(`tr.target_tag_id = $${values.length}`);
-  }
-  if (args.rel_type) {
-    values.push(args.rel_type);
-    clauses.push(`tr.rel_type = $${values.length}`);
-  }
-  if (args.review_status) {
-    values.push(args.review_status);
-    clauses.push(`tr.review_status = $${values.length}`);
-  }
-
-  const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
-  values.push(limit);
-
-  const result = await query(
-    `SELECT tr.*,
-            st.tag_value AS source_tag_value, st.canonical AS source_canonical,
-            tt.tag_value AS target_tag_value, tt.canonical AS target_canonical
-     FROM ${schema}.tag_relations tr
-     JOIN ${schema}.tags st ON st.tag_id = tr.source_tag_id
-     JOIN ${schema}.tags tt ON tt.tag_id = tr.target_tag_id
-     ${where}
-     ORDER BY tr.updated_at DESC
-     LIMIT $${values.length}`,
-    values,
-  );
-  return result.rows;
-}
-
-async function handleRelationEvidence(args) {
-  const schema = quoteIdent(SCHEMA);
-  const result = await query(
-    `WITH relation AS (
-       SELECT tr.*,
-              st.tag_value AS source_tag_value, std.dim_code AS source_dim_code,
-              tt.tag_value AS target_tag_value, ttd.dim_code AS target_dim_code
-       FROM ${schema}.tag_relations tr
-       JOIN ${schema}.tags st ON st.tag_id = tr.source_tag_id
-       JOIN ${schema}.tag_dimensions std ON std.dim_id = st.dim_id
-       JOIN ${schema}.tags tt ON tt.tag_id = tr.target_tag_id
-       JOIN ${schema}.tag_dimensions ttd ON ttd.dim_id = tt.dim_id
-       WHERE tr.rel_id = $1
-     )
-     SELECT r.*,
-            COALESCE(jsonb_agg(jsonb_build_object(
-              'asset_id', a.asset_id,
-              'title', a.title,
-              'subtitle', a.subtitle,
-              'category_code', c.category_code,
-              'category_name', c.category_name,
-              'source_name', a.source_name,
-              'source_url', a.source_url,
-              'carrier_type', tc.carrier_type,
-              'text_preview', LEFT(tc.full_text, 700)
-            ) ORDER BY evidence_asset.ordinality) FILTER (WHERE a.asset_id IS NOT NULL), '[]'::jsonb) AS evidence_assets
-     FROM relation r
-     LEFT JOIN LATERAL unnest(r.evidence_asset_ids) WITH ORDINALITY AS evidence_asset(asset_id, ordinality) ON TRUE
-     LEFT JOIN ${schema}.assets a ON a.asset_id = evidence_asset.asset_id
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     GROUP BY r.rel_id, r.source_tag_id, r.target_tag_id, r.rel_type, r.is_bidirectional,
-              r.confidence, r.annotated_by, r.review_status, r.evidence,
-              r.evidence_asset_ids, r.properties, r.created_at, r.updated_at,
-              r.source_tag_value, r.source_dim_code, r.target_tag_value, r.target_dim_code`,
-    [args.rel_id],
-  );
-  return result.rows[0] || null;
-}
-
-async function handleListCategoryNotes(args) {
-  const schema = quoteIdent(SCHEMA);
-  const result = await query(
-    `SELECT note_id, category_id, content, author, created_at, updated_at
-     FROM ${schema}.category_notes
-     WHERE category_id = $1
-     ORDER BY created_at ASC`,
-    [args.category_id],
-  );
-  return result.rows;
-}
-
-// ── New handlers (search upgrade) ───────────────────────────────────────────
-
-async function handleSearchFTS(args) {
-  const domainCode = 'arknights';
-  const limit = Math.min(Math.max(Number(args.limit || 50), 1), 200);
-  const schema = quoteIdent(SCHEMA);
-
-  const rawQuery = (args.query || '').trim();
-  if (!rawQuery) return { rows: [], total: 0 };
-
-  // Use jieba tokens for FTS, but keep the tsquery parser away from raw user
-  // syntax. to_tsquery treats punctuation/operators inside tokens as syntax and
-  // can raise PostgreSQL errors for ordinary mixed-language questions.
-  const tokens = tokenizeCJK(rawQuery);
-  const ftsQuery = buildWebsearchQuery(tokens, rawQuery);
-
-  const values = [ftsQuery, domainCode];
-  const catClause = [];
-  if (args.category) {
-    values.push(args.category);
-    values.push(domainCode);
-    catClause.push(`c.category_id IN (
-      WITH RECURSIVE sub AS (
-        SELECT c2.category_id FROM ${schema}.categories c2
-        JOIN ${schema}.domains d2 ON d2.domain_id = c2.domain_id
-        WHERE c2.category_code = $${values.length - 1} AND d2.domain_code = $${values.length}
-        UNION ALL
-        SELECT c3.category_id FROM ${schema}.categories c3 JOIN sub s ON c3.parent_category_id = s.category_id
-      )
-      SELECT category_id FROM sub
-    )`);
-  }
-  const catJoin = catClause.length ? `AND ${catClause.join(' AND ')}` : '';
-
-  values.push(limit);
-
-  const result = await query(
-    `WITH query_ts AS (SELECT websearch_to_tsquery('simple', $1) AS q)
-     SELECT a.asset_id, a.asset_kind, a.title, a.subtitle, a.source_name,
-            c.category_code, c.category_name,
-            tc.carrier_type, tc.character_name, tc.activity_name,
-            LEFT(COALESCE(tc.full_text, ''), 200) AS text_preview,
-            GREATEST(
-              COALESCE(ts_rank(to_tsvector('simple', COALESCE(a.title, '') || ' ' || COALESCE(a.subtitle, '')), qt.q), 0),
-              COALESCE(ts_rank(tc.search_vector, qt.q), 0)
-            ) AS rank
-     FROM ${schema}.assets a
-     JOIN ${schema}.domains d ON d.domain_id = a.domain_id
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     CROSS JOIN query_ts qt
-     WHERE d.domain_code = $2
-       AND (to_tsvector('simple', COALESCE(a.title, '') || ' ' || COALESCE(a.subtitle, '')) @@ qt.q OR tc.search_vector @@ qt.q)
-       ${catJoin}
-     ORDER BY rank DESC
-     LIMIT $${values.length}`,
-    values,
-  );
-  return { rows: result.rows, total: result.rows.length };
-}
-
-async function handleEntityCooccurrence(args) {
-  const entities = args.entities || [];
-  if (entities.length < 1) return { rows: [], total: 0, error: 'At least one entity required' };
-  if (entities.length === 1) {
-    // Fall back to regular search
-    return handleSearch({ query: entities[0], limit: args.limit || 50 });
-  }
-
-  const minMatches = Math.max(Number(args.min_matches || 2), 1);
-  const limit = Math.min(Math.max(Number(args.limit || 50), 1), 100);
-  const schema = quoteIdent(SCHEMA);
-
-  // For each entity, find matching asset_ids, then find intersection
-  const entityAssetIds = [];
-  for (const entity of entities) {
-    const result = await query(
-      `SELECT DISTINCT a.asset_id
-       FROM ${schema}.assets a
-       LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-       LEFT JOIN ${schema}.asset_chunks ac ON ac.asset_id = a.asset_id
-       WHERE a.title ILIKE $1 OR a.subtitle ILIKE $1 OR tc.full_text ILIKE $1 OR (ac.deleted_at IS NULL AND ac.chunk_text ILIKE $1)`,
-      [`%${entity}%`],
+  const doc = await query(`SELECT ${documentSelect} FROM documents d WHERE d.document_id = $1`, [documentId]);
+  if (!doc.rows[0]) {
+    const available = await query(
+      `SELECT document_id, document_id AS asset_id, title, source_name, content_type
+       FROM documents
+       ORDER BY document_id
+       LIMIT 8`,
     );
-    entityAssetIds.push(new Set(result.rows.map(r => r.asset_id)));
+    const bounds = await query(`SELECT MIN(document_id) AS min_document_id, MAX(document_id) AS max_document_id FROM documents`);
+    return {
+      error: 'document not found',
+      document_id: documentId,
+      asset_id: documentId,
+      id_bounds: bounds.rows[0] || null,
+      available_documents: available.rows,
+      hint: 'Use one of the available document_id values or search first; IDs may not start at 1.',
+    };
   }
 
-  // Count matches per asset
-  const matchCounts = new Map();
-  for (const idSet of entityAssetIds) {
-    for (const id of idSet) {
-      matchCounts.set(id, (matchCounts.get(id) || 0) + 1);
-    }
-  }
+  const includeUnits = args.include_units !== false;
+  const units = includeUnits
+    ? (await query(
+      `SELECT
+         unit_id,
+         unit_id AS chunk_id,
+         document_id,
+         document_id AS asset_id,
+         unit_index,
+         unit_kind,
+         heading,
+         speaker,
+         scene_code,
+         text,
+         text AS chunk_text,
+         source_tier,
+         content_type,
+         is_direct_scene,
+         metadata,
+         review_status,
+         created_at,
+         updated_at
+       FROM text_units
+       WHERE document_id = $1
+       ORDER BY unit_index, unit_id`,
+      [documentId],
+    )).rows
+    : [];
 
-  // Filter by min_matches
-  const qualifiedIds = [...matchCounts.entries()]
-    .filter(([, count]) => count >= minMatches)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([id]) => id);
-
-  if (!qualifiedIds.length) return { rows: [], total: 0, hint: 'No assets match the required number of entities' };
-
-  const result = await query(
-    `SELECT a.asset_id, a.asset_kind, a.title, a.subtitle, a.source_name,
-            c.category_code, c.category_name,
-            tc.carrier_type, tc.character_name, tc.activity_name,
-            LEFT(tc.full_text, 120) AS text_preview
-     FROM ${schema}.assets a
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     WHERE a.asset_id = ANY($1)
-     ORDER BY a.updated_at DESC`,
-    [qualifiedIds],
-  );
-
-  return { rows: result.rows, total: result.rows.length, matched_entities: entities.length, min_matches: minMatches };
-}
-
-async function handleSearchStats(args) {
-  const rawQuery = (args.query || '').trim();
-  if (!rawQuery) return { total: 0, byCategory: [], byNarrativeLayer: [], topTags: [] };
-
-  const schema = quoteIdent(SCHEMA);
-  const searchTerm = `%${rawQuery}%`;
-
-  // Total match count
-  const totalRes = await query(
-    `SELECT COUNT(DISTINCT a.asset_id)::int AS total
-     FROM ${schema}.assets a
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     LEFT JOIN ${schema}.asset_chunks ac ON ac.asset_id = a.asset_id
-     WHERE a.title ILIKE $1 OR a.subtitle ILIKE $1 OR tc.full_text ILIKE $1 OR (ac.deleted_at IS NULL AND ac.chunk_text ILIKE $1)`,
-    [searchTerm],
-  );
-
-  // By category
-  const byCat = await query(
-    `SELECT c.category_code, c.category_name, COUNT(DISTINCT a.asset_id)::int AS count
-     FROM ${schema}.assets a
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     LEFT JOIN ${schema}.asset_chunks ac ON ac.asset_id = a.asset_id
-     LEFT JOIN ${schema}.categories c ON c.category_id = a.category_id
-     WHERE a.title ILIKE $1 OR a.subtitle ILIKE $1 OR tc.full_text ILIKE $1 OR (ac.deleted_at IS NULL AND ac.chunk_text ILIKE $1)
-     GROUP BY c.category_code, c.category_name
-     ORDER BY count DESC
-     LIMIT 20`,
-    [searchTerm],
-  );
-
-  // By narrative layer
-  const byLayer = await query(
-    `SELECT tc.narrative_layer, COUNT(DISTINCT a.asset_id)::int AS count
-     FROM ${schema}.assets a
-     JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     WHERE tc.full_text ILIKE $1
-     GROUP BY tc.narrative_layer
-     ORDER BY count DESC`,
-    [searchTerm],
-  );
-
-  // Top tags
-  const topTags = await query(
-    `SELECT t.tag_value, td.dim_code, COUNT(DISTINCT a.asset_id)::int AS count
-     FROM ${schema}.assets a
-     LEFT JOIN ${schema}.text_contents tc ON tc.asset_id = a.asset_id
-     LEFT JOIN ${schema}.asset_chunks ac ON ac.asset_id = a.asset_id
-     JOIN ${schema}.asset_tags at2 ON at2.asset_id = a.asset_id AND at2.review_status <> 'rejected'
-     JOIN ${schema}.tags t ON t.tag_id = at2.tag_id
-     JOIN ${schema}.tag_dimensions td ON td.dim_id = t.dim_id
-     WHERE a.title ILIKE $1 OR a.subtitle ILIKE $1 OR tc.full_text ILIKE $1 OR (ac.deleted_at IS NULL AND ac.chunk_text ILIKE $1)
-     GROUP BY t.tag_value, td.dim_code
-     ORDER BY count DESC
-     LIMIT 30`,
-    [searchTerm],
-  );
+  const entities = (await query(
+    `SELECT DISTINCT e.entity_id, e.entity_type, e.name, e.name_en, e.summary, e.review_status
+     FROM entity_mentions em
+     JOIN entities e ON e.entity_id = em.entity_id
+     WHERE em.document_id = $1 AND em.review_status <> 'rejected'
+     ORDER BY e.entity_type, e.name
+     LIMIT 200`,
+    [documentId],
+  )).rows;
 
   return {
-    total: totalRes.rows[0]?.total || 0,
-    byCategory: byCat.rows,
-    byNarrativeLayer: byLayer.rows,
-    topTags: topTags.rows,
+    ...doc.rows[0],
+    full_text: units.map(u => u.text).filter(Boolean).join('\n\n'),
+    char_count: units.reduce((sum, u) => sum + String(u.text || '').length, 0),
+    units,
+    chunks: units,
+    entities,
   };
 }
 
-// ── Server ────────────────────────────────────────────────────────────────
+async function handleReadContext(args = {}) {
+  const unitId = unitIdFromArgs(args);
+  if (!unitId) return { error: 'unit_id or chunk_id is required' };
+  const radius = Math.min(Math.max(Number(args.radius || 2), 0), 10);
+
+  const anchor = await query(
+    `SELECT tu.*, d.title AS document_title
+     FROM text_units tu
+     JOIN documents d ON d.document_id = tu.document_id
+     WHERE tu.unit_id = $1`,
+    [unitId],
+  );
+  if (!anchor.rows[0]) return { error: 'unit not found', unit_id: unitId, chunk_id: unitId };
+
+  const row = anchor.rows[0];
+  const doc = await query(`SELECT ${documentSelect} FROM documents d WHERE d.document_id = $1`, [row.document_id]);
+  const units = await query(
+    `SELECT
+       unit_id,
+       unit_id AS chunk_id,
+       document_id,
+       document_id AS asset_id,
+       unit_index,
+       unit_kind,
+       heading,
+       speaker,
+       scene_code,
+       text,
+       text AS chunk_text,
+       metadata,
+       review_status
+     FROM text_units
+     WHERE document_id = $1 AND unit_index BETWEEN $2 AND $3
+     ORDER BY unit_index, unit_id`,
+    [row.document_id, row.unit_index - radius, row.unit_index + radius],
+  );
+
+  return {
+    document: doc.rows[0] || null,
+    asset: doc.rows[0] || null,
+    anchorUnitId: unitId,
+    anchorChunkId: unitId,
+    radius,
+    units: units.rows,
+    chunks: units.rows,
+  };
+}
+
+async function handleFindTags(args = {}) {
+  const rawQuery = String(args.query || '').trim();
+  const limit = clampLimit(args.limit, 30, 100);
+  const entityType = String(args.entity_type || args.dim_code || '').trim();
+
+  if (rawQuery) {
+    const result = await query(
+      `SELECT *
+       FROM resolve_entities_optimized($1::text, $2::integer)
+       WHERE ($3::text IS NULL OR entity_type = $3)
+       ORDER BY match_score DESC, document_count DESC, name`,
+      [rawQuery, limit, entityType || null],
+    );
+    return {
+      rows: result.rows.map(row => ({
+        ...row,
+        tag_id: row.entity_id,
+        tag_value: row.name,
+        dim_code: row.entity_type,
+      })),
+      total: result.rows.length,
+    };
+  }
+
+  const result = await query(
+    `SELECT e.entity_id, e.entity_type, e.name, e.name_en, e.summary, e.review_status,
+            COALESCE(jsonb_agg(ea.alias ORDER BY ea.alias) FILTER (WHERE ea.alias IS NOT NULL), '[]'::jsonb) AS aliases,
+            COUNT(DISTINCT em.document_id)::int AS document_count
+     FROM entities e
+     LEFT JOIN entity_aliases ea ON ea.entity_id = e.entity_id
+     LEFT JOIN entity_mentions em ON em.entity_id = e.entity_id
+     WHERE ($1::text IS NULL OR e.entity_type = $1)
+     GROUP BY e.entity_id
+     ORDER BY document_count DESC, e.name
+     LIMIT $2`,
+    [entityType || null, limit],
+  );
+  return {
+    rows: result.rows.map(row => ({
+      ...row,
+      tag_id: row.entity_id,
+      tag_value: row.name,
+      dim_code: row.entity_type,
+    })),
+    total: result.rows.length,
+  };
+}
+
+async function resolveTagEntityIds(tags) {
+  const ids = [];
+  for (const tag of tags || []) {
+    if (tag?.entity_id || tag?.tag_id) {
+      ids.push(Number(tag.entity_id || tag.tag_id));
+      continue;
+    }
+    const value = String(tag?.value || tag?.tag_value || '').trim();
+    if (!value) continue;
+    const entityType = String(tag.entity_type || tag.dim_code || '').trim();
+    const found = await query(
+      `SELECT e.entity_id
+       FROM entities e
+       LEFT JOIN entity_aliases ea ON ea.entity_id = e.entity_id
+       WHERE ($2::text IS NULL OR e.entity_type = $2)
+         AND (e.name = $1 OR e.name_en = $1 OR ea.alias = $1 OR e.name ILIKE '%' || $1 || '%' OR ea.alias ILIKE '%' || $1 || '%')
+       ORDER BY CASE WHEN e.name = $1 THEN 0 WHEN ea.alias = $1 THEN 1 ELSE 2 END, e.name
+       LIMIT 1`,
+      [value, entityType || null],
+    );
+    if (found.rows[0]) ids.push(Number(found.rows[0].entity_id));
+  }
+  return [...new Set(ids)].filter(Number.isFinite);
+}
+
+async function handleSearchByTags(args = {}) {
+  const entityIds = await resolveTagEntityIds(args.tags || []);
+  if (!entityIds.length) return { rows: [], total: 0, error: 'No matching entities found' };
+  const mode = String(args.mode || 'any').toLowerCase() === 'all' ? 'all' : 'any';
+  const limit = clampLimit(args.limit, 50, 200);
+
+  const result = await query(
+    `WITH matches AS (
+       SELECT em.document_id,
+              COUNT(DISTINCT em.entity_id)::int AS matched_entity_count,
+              jsonb_agg(DISTINCT jsonb_build_object('entity_id', e.entity_id, 'name', e.name, 'entity_type', e.entity_type)) AS matched_entities
+       FROM entity_mentions em
+       JOIN entities e ON e.entity_id = em.entity_id
+       WHERE em.entity_id = ANY($1::bigint[]) AND em.review_status <> 'rejected'
+       GROUP BY em.document_id
+     )
+     SELECT ${documentSelect},
+            m.matched_entity_count,
+            m.matched_entities,
+            LEFT(tu.text, 300) AS text_preview
+     FROM matches m
+     JOIN documents d ON d.document_id = m.document_id
+     LEFT JOIN LATERAL (
+       SELECT text FROM text_units WHERE document_id = d.document_id ORDER BY unit_index LIMIT 1
+     ) tu ON TRUE
+     WHERE ($2::text = 'any' OR m.matched_entity_count >= cardinality($1::bigint[]))
+     ORDER BY m.matched_entity_count DESC, d.source_tier ASC, d.title
+     LIMIT $3`,
+    [entityIds, mode, limit],
+  );
+  return { rows: result.rows, total: result.rows.length, entity_ids: entityIds, mode };
+}
+
+async function handleEntityCooccurrence(args = {}) {
+  const entities = (args.entities || []).map(v => String(v || '').trim()).filter(Boolean);
+  if (!entities.length) return { rows: [], total: 0, error: 'At least one entity required' };
+  const entityIds = await resolveTagEntityIds(entities.map(value => ({ value })));
+  const minMatches = Math.min(Math.max(Number(args.min_matches || Math.min(2, entityIds.length)), 1), entityIds.length || 1);
+  const limit = clampLimit(args.limit, 50, 100);
+  if (!entityIds.length) return { rows: [], total: 0, error: 'No matching entities found' };
+
+  const result = await query(
+    `WITH matches AS (
+       SELECT em.document_id,
+              COUNT(DISTINCT em.entity_id)::int AS matched_entity_count,
+              jsonb_agg(DISTINCT jsonb_build_object('entity_id', e.entity_id, 'name', e.name, 'entity_type', e.entity_type)) AS matched_entities
+       FROM entity_mentions em
+       JOIN entities e ON e.entity_id = em.entity_id
+       WHERE em.entity_id = ANY($1::bigint[]) AND em.review_status <> 'rejected'
+       GROUP BY em.document_id
+       HAVING COUNT(DISTINCT em.entity_id) >= $2
+     )
+     SELECT ${documentSelect},
+            m.matched_entity_count,
+            m.matched_entities,
+            LEFT(tu.text, 400) AS text_preview
+     FROM matches m
+     JOIN documents d ON d.document_id = m.document_id
+     LEFT JOIN LATERAL (
+       SELECT text FROM text_units WHERE document_id = d.document_id ORDER BY unit_index LIMIT 1
+     ) tu ON TRUE
+     ORDER BY m.matched_entity_count DESC, d.source_tier ASC, d.title
+     LIMIT $3`,
+    [entityIds, minMatches, limit],
+  );
+  return { rows: result.rows, total: result.rows.length, entity_ids: entityIds, min_matches: minMatches };
+}
+
+async function handleSearchStats(args = {}) {
+  const rawQuery = String(args.query || '').trim();
+  const limit = clampLimit(args.limit, 30, 100);
+  if (!rawQuery) return { total: 0, byContentType: [], bySourceTier: [], byGroup: [], topEntities: [] };
+  const term = `%${rawQuery}%`;
+
+  const stats = await query(
+    `WITH matched_documents AS (
+       SELECT DISTINCT d.document_id, d.content_type, d.source_tier, d.metadata
+       FROM documents d
+       LEFT JOIN text_units tu ON tu.document_id = d.document_id
+       WHERE d.title ILIKE $1
+          OR d.subtitle ILIKE $1
+          OR d.metadata::text ILIKE $1
+          OR tu.heading ILIKE $1
+          OR tu.text ILIKE $1
+          OR tu.metadata::text ILIKE $1
+     ),
+     total AS (
+       SELECT COUNT(*)::int AS total FROM matched_documents
+     ),
+     by_content_type AS (
+       SELECT COALESCE(jsonb_agg(row_to_json(t) ORDER BY t.count DESC), '[]'::jsonb) AS rows
+       FROM (
+         SELECT content_type, COUNT(*)::int AS count
+         FROM matched_documents
+         GROUP BY content_type
+         ORDER BY count DESC
+         LIMIT $2
+       ) t
+     ),
+     by_source_tier AS (
+       SELECT COALESCE(jsonb_agg(row_to_json(t) ORDER BY t.source_tier), '[]'::jsonb) AS rows
+       FROM (
+         SELECT source_tier, COUNT(*)::int AS count
+         FROM matched_documents
+         GROUP BY source_tier
+         ORDER BY source_tier
+       ) t
+     ),
+     by_group AS (
+       SELECT COALESCE(jsonb_agg(row_to_json(t) ORDER BY t.count DESC), '[]'::jsonb) AS rows
+       FROM (
+         SELECT metadata->>'top_group' AS top_group, metadata->>'group_name' AS group_name, COUNT(*)::int AS count
+         FROM matched_documents
+         GROUP BY metadata->>'top_group', metadata->>'group_name'
+         ORDER BY count DESC
+         LIMIT $2
+       ) t
+     ),
+     top_entities AS (
+       SELECT COALESCE(jsonb_agg(row_to_json(t) ORDER BY t.count DESC, t.name), '[]'::jsonb) AS rows
+       FROM (
+         SELECT e.entity_id, e.entity_type, e.name, COUNT(DISTINCT em.document_id)::int AS count
+         FROM entity_mentions em
+         JOIN entities e ON e.entity_id = em.entity_id
+         JOIN matched_documents md ON md.document_id = em.document_id
+         GROUP BY e.entity_id
+         ORDER BY count DESC, e.name
+         LIMIT $2
+       ) t
+     )
+     SELECT total.total,
+            by_content_type.rows AS by_content_type,
+            by_source_tier.rows AS by_source_tier,
+            by_group.rows AS by_group,
+            top_entities.rows AS top_entities
+     FROM total, by_content_type, by_source_tier, by_group, top_entities`,
+    [term, limit],
+  );
+
+  const row = stats.rows[0] || {};
+  return {
+    total: row.total || 0,
+    byContentType: row.by_content_type || [],
+    bySourceTier: row.by_source_tier || [],
+    byGroup: row.by_group || [],
+    topEntities: row.top_entities || [],
+  };
+}
+
 const server = new Server(
-  { name: 'lore-db-mcp', version: '1.0.0' },
+  { name: 'lore-db-mcp', version: '2.0.0' },
   { capabilities: { tools: {} } },
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+  const { name, arguments: args = {} } = request.params;
   try {
     let result;
     switch (name) {
@@ -1361,19 +944,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'lore_db_read_context': result = await handleReadContext(args); break;
       case 'lore_db_find_tags': result = await handleFindTags(args); break;
       case 'lore_db_search_by_tags': result = await handleSearchByTags(args); break;
-      case 'lore_db_tag_neighbors': result = await handleTagNeighbors(args); break;
-      case 'lore_db_related_assets': result = await handleRelatedAssets(args); break;
-      case 'lore_db_list_relations': result = await handleListRelations(args); break;
-      case 'lore_db_relation_evidence': result = await handleRelationEvidence(args); break;
-      case 'lore_db_list_category_notes': result = await handleListCategoryNotes(args); break;
       case 'lore_db_search_fts': result = await handleSearchFTS(args); break;
       case 'lore_db_entity_cooccurrence': result = await handleEntityCooccurrence(args); break;
       case 'lore_db_search_stats': result = await handleSearchStats(args); break;
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true };
     }
-    const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-    return { content: [{ type: 'text', text }] };
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   } catch (err) {
     return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
   }
@@ -1382,20 +959,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('lore-db-mcp server started');
-
-  ensureJieba().catch((err) => {
-    console.error('jieba initialization failed:', err.message);
-  });
-
-  if (process.env.LORE_DB_RUN_MAINTENANCE === '1') {
-    Promise.resolve()
-      .then(() => runMigrations())
-      .then(() => rebuildSearchVectors())
-      .catch((err) => {
-        console.error('Background database maintenance failed:', err.message);
-      });
-  }
+  console.error(`lore-db-mcp server started against ${DB_CONFIG.database}`);
 }
 
 main().catch((err) => {

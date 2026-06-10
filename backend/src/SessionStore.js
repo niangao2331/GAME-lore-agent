@@ -66,15 +66,6 @@ export class SessionStore {
     return session;
   }
 
-  updateTitle(id, title) {
-    const session = this.sessions.get(id);
-    if (session) {
-      session.title = title;
-      session.updatedAt = new Date().toISOString();
-      this.save();
-    }
-  }
-
   delete(id) {
     this.sessions.delete(id);
     this.save();

@@ -1,6 +1,7 @@
 node_modules/
 backend/node_modules/
 backend/data/interaction-logs/
+backend/data/sessions.json
 
 *.log
 *.err.log
@@ -9,6 +10,26 @@ backend/data/interaction-logs/
 .env
 .env.*
 !.env.example
+
+# Runtime data
+postgres-data/
+sessions.json
+
+# Local credentials and scratch artifacts
+API.txt
+database/API.txt
+_backup/
+.playwright-mcp/
+database/**/.playwright-mcp/
+database/**/data/*progress*.txt
+database/**/data/*_log.txt
+database/**/data/test_*.json
+database/**/data/test_count.txt
+database/**/data/sample_check.txt
+database/**/*_check.txt
+database/**/random_sample.txt
+database/**/sample_*.txt
+database/**/scripts/*.png
 
 dist/
 build/

@@ -1,6 +1,5 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 export class MCPRegistry {
   constructor(toolRegistry) {
@@ -17,17 +16,11 @@ export class MCPRegistry {
     this.servers.set(id, { id, ...config, status: 'connecting' });
 
     try {
-      let transport;
-      if (config.transport === 'stdio') {
-        transport = new StdioClientTransport({
-          command: config.command,
-          args: config.args || []
-        });
-      } else if (config.transport === 'http') {
-        transport = new StreamableHTTPClientTransport(new URL(config.url));
-      } else {
-        throw new Error(`Unsupported transport: ${config.transport}`);
-      }
+      const transport = new StdioClientTransport({
+        command: config.command,
+        args: config.args || [],
+        env: config.env || undefined
+      });
 
       const client = new Client(
         { name: 'iris-web-platform', version: '1.0.0' },
@@ -39,6 +32,8 @@ export class MCPRegistry {
 
       const { tools } = await client.listTools();
       for (const tool of tools) {
+        // MCP tools are namespaced before registration so server switches cannot
+        // collide with local application tools or tools from other MCP servers.
         const mcpTool = {
           name: `mcp_${id}_${tool.name}`,
           description: `[MCP:${id}] ${tool.description || tool.name}`,
@@ -63,34 +58,42 @@ export class MCPRegistry {
     }
   }
 
-  async removeServer(id) {
-    const entry = this.clients.get(id);
-    if (entry) {
-      await entry.client.close().catch(() => {});
-      this.clients.delete(id);
-    }
-
-    // Remove registered tools for this server
-    for (const [toolName] of this.toolRegistry.tools) {
-      if (toolName.startsWith(`mcp_${id}_`)) {
-        this.toolRegistry.unregister(toolName);
-      }
-    }
-
-    this.servers.delete(id);
-  }
-
   getServers() {
     return Array.from(this.servers.values());
   }
 
-  get size() {
-    return this.servers.size;
+  async removeServer(id) {
+    const server = this.servers.get(id);
+    if (server?.status === 'connected') {
+      const clientEntry = this.clients.get(id);
+      if (clientEntry) {
+        try {
+          // Unregister tools by asking the still-connected server for the same
+          // tool list that was used during registration.
+          const { tools } = await clientEntry.client.listTools();
+          for (const tool of tools) {
+            this.toolRegistry.unregister(`mcp_${id}_${tool.name}`);
+          }
+        } catch {
+          // Best-effort cleanup
+        }
+        try {
+          await clientEntry.transport.close();
+        } catch {
+          // Ignore close errors
+        }
+        this.clients.delete(id);
+      }
+    }
+    this.servers.delete(id);
   }
 
-  async shutdown() {
-    for (const [id] of this.clients) {
-      await this.removeServer(id);
-    }
+  async switchServer(id, config) {
+    await this.removeServer(id);
+    return this.addServer(id, config);
+  }
+
+  get size() {
+    return this.servers.size;
   }
 }

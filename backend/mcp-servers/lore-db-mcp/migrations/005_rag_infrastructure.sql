@@ -116,7 +116,7 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    INSERT INTO embedding_jobs (target_type, target_id, content_hash, priority)
+    INSERT INTO embedding_jobs AS ej (target_type, target_id, content_hash, priority)
     VALUES (target_type,
         CASE WHEN target_type = 'document' THEN NEW.document_id ELSE NEW.unit_id END,
         new_hash, 5)
@@ -128,7 +128,7 @@ BEGIN
         created_at = now(),
         started_at = NULL,
         completed_at = NULL
-    WHERE embedding_jobs.content_hash IS DISTINCT FROM EXCLUDED.content_hash;
+    WHERE ej.content_hash IS DISTINCT FROM EXCLUDED.content_hash;
 
     RETURN NEW;
 END;

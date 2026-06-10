@@ -1,38 +1,7 @@
 const Admin = {
   token: localStorage.getItem('iris_admin_token') || '',
-  currentAsset: null,
-  currentClaim: null,
-  labels: {
-    status: {
-      pending: '待审核',
-      approved: '已确认',
-      needs_review: '需复核',
-      rejected: '已驳回',
-      unverified: '未核验',
-      verified: '已核验',
-      inferred: '推断成立',
-      disputed: '存在争议',
-      outdated: '已过时'
-    },
-    revisionKind: {
-      text_edit: '正文编辑',
-      metadata_edit: '元数据编辑',
-      restore: '版本恢复'
-    },
-    action: {
-      update_asset: '更新资料',
-      update_asset_text: '更新正文',
-      rebuild_chunks: '重建分段',
-      create_asset_tag: '新增标签',
-      update_asset_tag: '更新标签',
-      delete_asset_tag: '驳回标签',
-      create_claim: '新增命题',
-      update_claim: '更新命题',
-      add_claim_evidence: '绑定证据',
-      delete_claim_evidence: '移除证据',
-      restore_revision: '恢复版本'
-    }
-  },
+  currentDocument: null,
+  currentEntity: null,
 
   init() {
     document.getElementById('admin-token').value = this.token;
@@ -46,17 +15,19 @@ const Admin = {
       btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
     });
 
-    document.getElementById('search-assets').addEventListener('click', () => this.searchAssets());
-    document.getElementById('search-claims').addEventListener('click', () => this.searchClaims());
-    document.getElementById('new-claim').addEventListener('click', () => this.newClaim());
-    document.getElementById('save-asset').addEventListener('click', () => this.saveAsset());
-    document.getElementById('save-text').addEventListener('click', () => this.saveText());
-    document.getElementById('rebuild-chunks').addEventListener('click', () => this.rebuildChunks());
-    document.getElementById('add-tag').addEventListener('click', () => this.addTag());
-    document.getElementById('save-claim').addEventListener('click', () => this.saveClaim());
-    document.getElementById('add-evidence').addEventListener('click', () => this.addEvidence());
+    document.getElementById('search-documents').addEventListener('click', () => this.searchDocuments());
+    document.getElementById('new-document').addEventListener('click', () => this.newDocument());
+    document.getElementById('save-document').addEventListener('click', () => this.saveDocument());
+    document.getElementById('add-unit').addEventListener('click', () => this.addUnit());
+    document.getElementById('rebuild-mentions').addEventListener('click', () => this.rebuildMentions());
+    document.getElementById('delete-document').addEventListener('click', () => this.deleteDocument());
 
-    this.searchAssets();
+    document.getElementById('search-entities').addEventListener('click', () => this.searchEntities());
+    document.getElementById('new-entity').addEventListener('click', () => this.newEntity());
+    document.getElementById('save-entity').addEventListener('click', () => this.saveEntity());
+    document.getElementById('add-alias').addEventListener('click', () => this.addAlias());
+
+    this.searchDocuments();
   },
 
   headers() {
@@ -78,112 +49,390 @@ const Admin = {
     el.className = kind;
   },
 
-  label(group, value) {
-    return this.labels[group]?.[value] || value || '';
-  },
-
   escape(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
     }[c]));
+  },
+
+  parseJson(id, fallback = {}) {
+    const value = document.getElementById(id).value.trim();
+    if (!value) return fallback;
+    return JSON.parse(value);
   },
 
   switchTab(tab) {
     document.querySelectorAll('.tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
-    document.getElementById('asset-search').classList.toggle('hidden', tab !== 'assets');
-    document.getElementById('claim-search').classList.toggle('hidden', tab !== 'claims');
+    document.getElementById('document-search').classList.toggle('hidden', tab !== 'documents');
+    document.getElementById('entity-search').classList.toggle('hidden', tab !== 'entities');
   },
 
-  async searchAssets() {
+  async searchDocuments() {
     try {
-      this.status('正在搜索资料');
+      this.status('正在搜索文档');
       const params = new URLSearchParams();
-      const q = document.getElementById('asset-query').value.trim();
-      const category = document.getElementById('asset-category').value.trim();
-      const tag = document.getElementById('asset-tag').value.trim();
-      if (q) params.set('query', q);
-      if (category) params.set('category', category);
-      if (tag) params.set('tag', tag);
-      const data = await this.api(`/api/admin/assets?${params}`);
-      const list = document.getElementById('asset-results');
+      const fields = {
+        query: 'document-query',
+        content_type: 'document-content-type',
+        entity: 'document-entity',
+        source_tier: 'document-source-tier',
+        review_status: 'document-review-filter',
+      };
+      for (const [key, id] of Object.entries(fields)) {
+        const value = document.getElementById(id).value.trim();
+        if (value) params.set(key, value);
+      }
+      const data = await this.api(`/api/admin/documents?${params}`);
+      const list = document.getElementById('document-results');
       list.innerHTML = data.rows.map(row => `
-        <div class="result-item" data-asset-id="${row.asset_id}">
-          <div class="result-title">#${row.asset_id} ${this.escape(row.title)}</div>
-          <div class="result-meta">${this.escape(row.category_code || '')} / ${this.escape(row.carrier_type || '')} / ${this.escape(row.narrative_layer || '')}</div>
+        <div class="result-item" data-document-id="${row.document_id}">
+          <div class="result-title">#${row.document_id} ${this.escape(row.title)}</div>
+          <div class="result-meta">${this.escape(row.content_type)} / tier ${row.source_tier} / ${this.escape(row.review_status)} / units ${row.unit_count}</div>
           <div class="result-preview">${this.escape(row.text_preview || '')}</div>
         </div>
       `).join('');
-      list.querySelectorAll('[data-asset-id]').forEach(el => {
-        el.addEventListener('click', () => this.loadAsset(el.dataset.assetId));
+      list.querySelectorAll('[data-document-id]').forEach(el => {
+        el.addEventListener('click', () => this.loadDocument(el.dataset.documentId));
       });
-      this.status(`找到资料：${data.rows.length}`, 'ok');
+      this.status(`找到文档：${data.rows.length}`, 'ok');
     } catch (err) {
       this.status(err.message, 'danger');
     }
   },
 
-  async loadAsset(assetId) {
+  newDocument() {
+    this.currentDocument = { document: { source_tier: 1, content_type: 'event_story', canon_status: 'official', review_status: 'pending', metadata: {} }, units: [], mentions: [], revisions: [] };
+    this.currentEntity = null;
+    this.showDocument();
+  },
+
+  async loadDocument(documentId) {
     try {
-      this.status(`正在加载资料 ${assetId}`);
-      const data = await this.api(`/api/admin/assets/${assetId}`);
-      this.currentAsset = data;
-      this.currentClaim = null;
-      document.getElementById('empty-state').classList.add('hidden');
-      document.getElementById('asset-editor').classList.remove('hidden');
-      document.getElementById('claim-editor').classList.add('hidden');
-
-      const a = data.asset;
-      document.getElementById('asset-id').textContent = `资料 ${a.asset_id}`;
-      document.getElementById('asset-title').value = a.title || '';
-      document.getElementById('asset-subtitle').value = a.subtitle || '';
-      document.getElementById('asset-source-name').value = a.source_name || '';
-      document.getElementById('asset-source-url').value = a.source_url || '';
-      document.getElementById('asset-carrier-type').value = a.carrier_type || '';
-      document.getElementById('asset-narrative-layer').value = a.narrative_layer || '';
-      document.getElementById('asset-character-name').value = a.character_name || '';
-      document.getElementById('asset-activity-name').value = a.activity_name || '';
-      document.getElementById('asset-mission-code').value = a.mission_code || '';
-      document.getElementById('asset-text').value = a.full_text || '';
-
-      this.renderTags(data.tags);
-      this.renderChunks(data.chunks);
-      this.renderRevisions(data.revisions);
-      this.renderAssetClaims(data.claims);
-      await this.loadAudit('asset', a.asset_id);
-      this.status('资料已加载', 'ok');
+      this.status(`正在加载文档 ${documentId}`);
+      this.currentDocument = await this.api(`/api/admin/documents/${documentId}`);
+      this.currentEntity = null;
+      this.showDocument();
+      await this.loadAudit('document', documentId);
+      this.status('文档已加载', 'ok');
     } catch (err) {
       this.status(err.message, 'danger');
     }
   },
 
-  renderTags(tags) {
-    document.getElementById('tag-list').innerHTML = tags.map(tag => `
-      <div class="tag-card ${tag.review_status === 'rejected' ? 'rejected' : ''}">
-        <div class="tag-main">#${tag.asset_tag_id} [${this.escape(tag.dim_code)}] ${this.escape(tag.tag_value)}</div>
-        <div class="result-meta">置信度 ${tag.confidence} / ${this.escape(tag.annotated_by)} / ${this.escape(this.label('status', tag.review_status))}</div>
-        <div class="tag-controls">
-          <input data-tag-note="${tag.asset_tag_id}" value="${this.escape(tag.note || '')}" placeholder="备注">
-          <select data-tag-status="${tag.asset_tag_id}">
-            ${['pending','approved','needs_review','rejected'].map(s => `<option value="${s}" ${s === tag.review_status ? 'selected' : ''}>${this.label('status', s)}</option>`).join('')}
+  showDocument() {
+    document.getElementById('empty-state').classList.add('hidden');
+    document.getElementById('document-editor').classList.remove('hidden');
+    document.getElementById('entity-editor').classList.add('hidden');
+
+    const d = this.currentDocument.document;
+    document.getElementById('document-id').textContent = d.document_id ? `文档 ${d.document_id}` : '新文档';
+    document.getElementById('document-title').value = d.title || '';
+    document.getElementById('document-subtitle').value = d.subtitle || '';
+    document.getElementById('document-source-name').value = d.source_name || '';
+    document.getElementById('document-source-uri').value = d.source_uri || '';
+    document.getElementById('document-content-type-edit').value = d.content_type || 'event_story';
+    document.getElementById('document-source-tier-edit').value = d.source_tier || 1;
+    document.getElementById('document-canon-status').value = d.canon_status || 'official';
+    document.getElementById('document-review-status').value = d.review_status || 'pending';
+    document.getElementById('document-perspective-scope').value = d.perspective_scope || '';
+    document.getElementById('document-metadata').value = JSON.stringify(d.metadata || {}, null, 2);
+
+    this.renderUnits(this.currentDocument.units || []);
+    this.renderMentions(this.currentDocument.mentions || []);
+    this.renderRevisions(this.currentDocument.revisions || []);
+    this.renderAliases([]);
+  },
+
+  documentBody() {
+    return {
+      title: document.getElementById('document-title').value.trim(),
+      subtitle: document.getElementById('document-subtitle').value.trim() || null,
+      source_name: document.getElementById('document-source-name').value.trim() || null,
+      source_uri: document.getElementById('document-source-uri').value.trim() || null,
+      content_type: document.getElementById('document-content-type-edit').value.trim() || 'event_story',
+      source_tier: Number(document.getElementById('document-source-tier-edit').value || 1),
+      canon_status: document.getElementById('document-canon-status').value,
+      review_status: document.getElementById('document-review-status').value,
+      perspective_scope: document.getElementById('document-perspective-scope').value.trim() || null,
+      metadata: this.parseJson('document-metadata', {}),
+    };
+  },
+
+  async saveDocument() {
+    try {
+      const body = this.documentBody();
+      if (!body.title) throw new Error('标题不能为空');
+      if (this.currentDocument?.document?.document_id) {
+        const id = this.currentDocument.document.document_id;
+        await this.api(`/api/admin/documents/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+        await this.loadDocument(id);
+      } else {
+        const data = await this.api('/api/admin/documents', { method: 'POST', body: JSON.stringify(body) });
+        await this.loadDocument(data.document.document_id);
+      }
+      await this.searchDocuments();
+      this.status('文档已保存', 'ok');
+    } catch (err) {
+      this.status(err.message, 'danger');
+    }
+  },
+
+  renderUnits(units) {
+    document.getElementById('unit-list').innerHTML = units.map(unit => `
+      <div class="chunk-card" data-unit-card="${unit.unit_id}">
+        <div class="chunk-main">unit ${unit.unit_id} / index ${unit.unit_index} / ${this.escape(unit.unit_kind)} / ${this.escape(unit.review_status)}</div>
+        <div class="meta-grid">
+          <input data-unit-field="${unit.unit_id}:unit_index" type="number" value="${unit.unit_index ?? 0}">
+          <input data-unit-field="${unit.unit_id}:unit_kind" value="${this.escape(unit.unit_kind || 'chunk')}">
+          <input data-unit-field="${unit.unit_id}:heading" value="${this.escape(unit.heading || '')}" placeholder="heading">
+          <input data-unit-field="${unit.unit_id}:speaker" value="${this.escape(unit.speaker || '')}" placeholder="speaker">
+          <input data-unit-field="${unit.unit_id}:scene_code" value="${this.escape(unit.scene_code || '')}" placeholder="scene_code">
+          <select data-unit-field="${unit.unit_id}:review_status">
+            ${['pending','approved','needs_review','seeded','rejected'].map(s => `<option value="${s}" ${s === unit.review_status ? 'selected' : ''}>${s}</option>`).join('')}
           </select>
-          <button data-tag-save="${tag.asset_tag_id}">保存</button>
-          <button data-tag-delete="${tag.asset_tag_id}" class="danger">驳回</button>
+          <input data-unit-field="${unit.unit_id}:content_type" value="${this.escape(unit.content_type || '')}" placeholder="content_type">
+          <input data-unit-field="${unit.unit_id}:source_tier" type="number" min="1" max="5" value="${unit.source_tier || 1}">
+        </div>
+        <textarea data-unit-field="${unit.unit_id}:text" spellcheck="false">${this.escape(unit.text || '')}</textarea>
+        <textarea data-unit-field="${unit.unit_id}:metadata" spellcheck="false" placeholder="metadata JSON">${this.escape(JSON.stringify(unit.metadata || {}, null, 2))}</textarea>
+        <div class="button-row">
+          <button data-save-unit="${unit.unit_id}">保存单元</button>
+          <button data-delete-unit="${unit.unit_id}" class="danger">删除单元</button>
         </div>
       </div>
     `).join('');
-    document.querySelectorAll('[data-tag-save]').forEach(btn => {
-      btn.addEventListener('click', () => this.saveTag(btn.dataset.tagSave));
+    document.querySelectorAll('[data-save-unit]').forEach(btn => {
+      btn.addEventListener('click', () => this.saveUnit(btn.dataset.saveUnit));
     });
-    document.querySelectorAll('[data-tag-delete]').forEach(btn => {
-      btn.addEventListener('click', () => this.deleteTag(btn.dataset.tagDelete));
+    document.querySelectorAll('[data-delete-unit]').forEach(btn => {
+      btn.addEventListener('click', () => this.deleteUnit(btn.dataset.deleteUnit));
     });
   },
 
-  renderChunks(chunks) {
-    document.getElementById('chunk-list').innerHTML = chunks.map(chunk => `
-      <div class="chunk-card">
-        <div class="chunk-main">分段 ${chunk.chunk_id} / 序号 ${chunk.chunk_index} / ${this.escape(this.label('status', chunk.review_status))} ${chunk.deleted_at ? '/ 已删除' : ''}</div>
-        <div class="result-preview">${this.escape((chunk.chunk_text || '').slice(0, 500))}</div>
+  unitValue(unitId, field) {
+    return document.querySelector(`[data-unit-field="${unitId}:${field}"]`).value;
+  },
+
+  async saveUnit(unitId) {
+    try {
+      const body = {
+        unit_index: Number(this.unitValue(unitId, 'unit_index')),
+        unit_kind: this.unitValue(unitId, 'unit_kind'),
+        heading: this.unitValue(unitId, 'heading') || null,
+        speaker: this.unitValue(unitId, 'speaker') || null,
+        scene_code: this.unitValue(unitId, 'scene_code') || null,
+        review_status: this.unitValue(unitId, 'review_status'),
+        content_type: this.unitValue(unitId, 'content_type') || this.currentDocument.document.content_type,
+        source_tier: Number(this.unitValue(unitId, 'source_tier') || this.currentDocument.document.source_tier),
+        text: this.unitValue(unitId, 'text'),
+        metadata: JSON.parse(this.unitValue(unitId, 'metadata') || '{}'),
+      };
+      await this.api(`/api/admin/text-units/${unitId}`, { method: 'PATCH', body: JSON.stringify(body) });
+      await this.loadDocument(this.currentDocument.document.document_id);
+      this.status('文本单元已保存', 'ok');
+    } catch (err) {
+      this.status(err.message, 'danger');
+    }
+  },
+
+  async addUnit() {
+    if (!this.currentDocument?.document?.document_id) {
+      await this.saveDocument();
+    }
+    const id = this.currentDocument?.document?.document_id;
+    if (!id) return;
+    try {
+      await this.api(`/api/admin/documents/${id}/text-units`, {
+        method: 'POST',
+        body: JSON.stringify({
+          unit_kind: 'chunk',
+          text: '',
+          source_tier: this.currentDocument.document.source_tier,
+          content_type: this.currentDocument.document.content_type,
+          review_status: 'pending',
+        }),
+      });
+      await this.loadDocument(id);
+      this.status('文本单元已新增', 'ok');
+    } catch (err) {
+      this.status(err.message, 'danger');
+    }
+  },
+
+  async deleteUnit(unitId) {
+    try {
+      await this.api(`/api/admin/text-units/${unitId}`, { method: 'DELETE', body: '{}' });
+      await this.loadDocument(this.currentDocument.document.document_id);
+      this.status('文本单元已删除', 'ok');
+    } catch (err) {
+      this.status(err.message, 'danger');
+    }
+  },
+
+  async rebuildMentions() {
+    const id = this.currentDocument?.document?.document_id;
+    if (!id) return;
+    try {
+      const data = await this.api(`/api/admin/documents/${id}/rebuild-mentions`, { method: 'POST', body: '{}' });
+      await this.loadDocument(id);
+      this.status(`实体提及已重建：${data.inserted}`, 'ok');
+    } catch (err) {
+      this.status(err.message, 'danger');
+    }
+  },
+
+  async deleteDocument() {
+    const id = this.currentDocument?.document?.document_id;
+    if (!id) return;
+    try {
+      await this.api(`/api/admin/documents/${id}`, { method: 'DELETE', body: '{}' });
+      this.currentDocument = null;
+      document.getElementById('document-editor').classList.add('hidden');
+      document.getElementById('empty-state').classList.remove('hidden');
+      await this.searchDocuments();
+      this.status('文档已删除', 'ok');
+    } catch (err) {
+      this.status(err.message, 'danger');
+    }
+  },
+
+  async searchEntities() {
+    try {
+      this.status('正在搜索实体');
+      const params = new URLSearchParams();
+      const query = document.getElementById('entity-query').value.trim();
+      const entityType = document.getElementById('entity-type-filter').value.trim();
+      const reviewStatus = document.getElementById('entity-review-filter').value.trim();
+      if (query) params.set('query', query);
+      if (entityType) params.set('entity_type', entityType);
+      if (reviewStatus) params.set('review_status', reviewStatus);
+      const data = await this.api(`/api/admin/entities?${params}`);
+      const list = document.getElementById('entity-results');
+      list.innerHTML = data.rows.map(row => `
+        <div class="result-item" data-entity-id="${row.entity_id}">
+          <div class="result-title">#${row.entity_id} ${this.escape(row.name)}</div>
+          <div class="result-meta">${this.escape(row.entity_type)} / ${this.escape(row.review_status)} / docs ${row.document_count}</div>
+          <div class="result-preview">${this.escape(row.summary || '')}</div>
+        </div>
+      `).join('');
+      list.querySelectorAll('[data-entity-id]').forEach(el => {
+        el.addEventListener('click', () => this.loadEntity(el.dataset.entityId));
+      });
+      this.status(`找到实体：${data.rows.length}`, 'ok');
+    } catch (err) {
+      this.status(err.message, 'danger');
+    }
+  },
+
+  newEntity() {
+    this.currentEntity = { entity: { entity_type: 'character', review_status: 'pending', properties: {} }, aliases: [], mentions: [] };
+    this.currentDocument = null;
+    this.showEntity();
+  },
+
+  async loadEntity(entityId) {
+    try {
+      this.status(`正在加载实体 ${entityId}`);
+      this.currentEntity = await this.api(`/api/admin/entities/${entityId}`);
+      this.currentDocument = null;
+      this.showEntity();
+      await this.loadAudit('entity', entityId);
+      this.status('实体已加载', 'ok');
+    } catch (err) {
+      this.status(err.message, 'danger');
+    }
+  },
+
+  showEntity() {
+    document.getElementById('empty-state').classList.add('hidden');
+    document.getElementById('document-editor').classList.add('hidden');
+    document.getElementById('entity-editor').classList.remove('hidden');
+    const e = this.currentEntity.entity;
+    document.getElementById('entity-id').textContent = e.entity_id ? `实体 ${e.entity_id}` : '新实体';
+    document.getElementById('entity-name').value = e.name || '';
+    document.getElementById('entity-type').value = e.entity_type || 'character';
+    document.getElementById('entity-name-en').value = e.name_en || '';
+    document.getElementById('entity-review-status').value = e.review_status || 'pending';
+    document.getElementById('entity-summary').value = e.summary || '';
+    document.getElementById('entity-properties').value = JSON.stringify(e.properties || {}, null, 2);
+    this.renderAliases(this.currentEntity.aliases || []);
+    this.renderMentions(this.currentEntity.mentions || []);
+    this.renderRevisions([]);
+  },
+
+  async saveEntity() {
+    try {
+      const body = {
+        name: document.getElementById('entity-name').value.trim(),
+        entity_type: document.getElementById('entity-type').value.trim() || 'character',
+        name_en: document.getElementById('entity-name-en').value.trim() || null,
+        review_status: document.getElementById('entity-review-status').value,
+        summary: document.getElementById('entity-summary').value.trim() || null,
+        properties: this.parseJson('entity-properties', {}),
+      };
+      if (!body.name) throw new Error('实体名不能为空');
+      if (this.currentEntity?.entity?.entity_id) {
+        const id = this.currentEntity.entity.entity_id;
+        await this.api(`/api/admin/entities/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+        await this.loadEntity(id);
+      } else {
+        const data = await this.api('/api/admin/entities', { method: 'POST', body: JSON.stringify(body) });
+        await this.loadEntity(data.entity.entity_id);
+      }
+      await this.searchEntities();
+      this.status('实体已保存', 'ok');
+    } catch (err) {
+      this.status(err.message, 'danger');
+    }
+  },
+
+  async addAlias() {
+    const id = this.currentEntity?.entity?.entity_id;
+    if (!id) return;
+    const alias = document.getElementById('alias-value').value.trim();
+    if (!alias) return;
+    try {
+      await this.api(`/api/admin/entities/${id}/aliases`, {
+        method: 'POST',
+        body: JSON.stringify({ alias, alias_kind: 'alias', source: 'manual', confidence: 1 }),
+      });
+      document.getElementById('alias-value').value = '';
+      await this.loadEntity(id);
+      this.status('别名已保存', 'ok');
+    } catch (err) {
+      this.status(err.message, 'danger');
+    }
+  },
+
+  async deleteAlias(aliasId) {
+    try {
+      await this.api(`/api/admin/aliases/${aliasId}`, { method: 'DELETE' });
+      await this.loadEntity(this.currentEntity.entity.entity_id);
+      this.status('别名已删除', 'ok');
+    } catch (err) {
+      this.status(err.message, 'danger');
+    }
+  },
+
+  renderAliases(aliases) {
+    document.getElementById('alias-list').innerHTML = aliases.map(alias => `
+      <div class="tag-card">
+        <div class="tag-main">#${alias.alias_id} ${this.escape(alias.alias)}</div>
+        <div class="result-meta">${this.escape(alias.alias_kind)} / ${this.escape(alias.source)} / ${alias.confidence}</div>
+        <div class="button-row"><button data-delete-alias="${alias.alias_id}" class="danger">删除别名</button></div>
+      </div>
+    `).join('');
+    document.querySelectorAll('[data-delete-alias]').forEach(btn => {
+      btn.addEventListener('click', () => this.deleteAlias(btn.dataset.deleteAlias));
+    });
+  },
+
+  renderMentions(mentions) {
+    document.getElementById('mention-list').innerHTML = mentions.map(row => `
+      <div class="result-item">
+        <div class="result-title">#${row.mention_id} ${this.escape(row.name || row.document_title || '')}</div>
+        <div class="result-meta">doc ${row.document_id} / unit ${row.unit_id || '-'} / ${this.escape(row.role)} / ${this.escape(row.review_status)}</div>
+        <div class="result-preview">${this.escape(row.context_snippet || row.heading || '')}</div>
       </div>
     `).join('');
   },
@@ -191,8 +440,8 @@ const Admin = {
   renderRevisions(revisions) {
     document.getElementById('revision-list').innerHTML = revisions.map(rev => `
       <div class="result-item">
-        <div class="result-title">版本 ${rev.revision_id}</div>
-        <div class="result-meta">${this.escape(this.label('revisionKind', rev.revision_kind))} / ${this.escape(rev.created_at)}</div>
+        <div class="result-title">版本 ${rev.revision_id} / ${this.escape(rev.revision_kind)}</div>
+        <div class="result-meta">${this.escape(rev.created_by)} / ${this.escape(rev.created_at)}</div>
         <button data-restore="${rev.revision_id}">恢复</button>
       </div>
     `).join('');
@@ -201,234 +450,29 @@ const Admin = {
     });
   },
 
-  renderAssetClaims(claims) {
-    document.getElementById('asset-claims').innerHTML = claims.map(claim => `
-      <div class="result-item">
-        <div class="result-title">命题 ${claim.claim_id} / ${this.escape(this.label('status', claim.status))}</div>
-        <div class="result-preview">${this.escape(claim.claim_text)}</div>
-      </div>
-    `).join('');
-  },
-
   async loadAudit(targetType, targetId) {
-    const data = await this.api(`/api/admin/audit?target_type=${encodeURIComponent(targetType)}&target_id=${encodeURIComponent(targetId)}&limit=20`);
-    document.getElementById('audit-list').innerHTML = data.rows.map(row => `
-      <div class="result-item">
-        <div class="result-title">${this.escape(this.label('action', row.action))}</div>
-        <div class="result-meta">${this.escape(row.actor)} / ${this.escape(row.created_at)}</div>
-      </div>
-    `).join('');
-  },
-
-  async saveAsset() {
-    if (!this.currentAsset) return;
-    const id = this.currentAsset.asset.asset_id;
     try {
-      await this.api(`/api/admin/assets/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          title: document.getElementById('asset-title').value,
-          subtitle: document.getElementById('asset-subtitle').value,
-          source_name: document.getElementById('asset-source-name').value,
-          source_url: document.getElementById('asset-source-url').value,
-          carrier_type: document.getElementById('asset-carrier-type').value,
-          narrative_layer: document.getElementById('asset-narrative-layer').value,
-          character_name: document.getElementById('asset-character-name').value,
-          activity_name: document.getElementById('asset-activity-name').value,
-          mission_code: document.getElementById('asset-mission-code').value
-        })
-      });
-      this.status('元数据已保存', 'ok');
-      await this.loadAsset(id);
-    } catch (err) {
-      this.status(err.message, 'danger');
-    }
-  },
-
-  async saveText() {
-    if (!this.currentAsset) return;
-    const id = this.currentAsset.asset.asset_id;
-    try {
-      await this.api(`/api/admin/assets/${id}/text`, {
-        method: 'PATCH',
-        body: JSON.stringify({ full_text: document.getElementById('asset-text').value, note: '管理台正文编辑' })
-      });
-      this.status('正文已保存，分段已重建', 'ok');
-      await this.loadAsset(id);
-    } catch (err) {
-      this.status(err.message, 'danger');
-    }
-  },
-
-  async rebuildChunks() {
-    if (!this.currentAsset) return;
-    const id = this.currentAsset.asset.asset_id;
-    try {
-      await this.api(`/api/admin/assets/${id}/rebuild-chunks`, { method: 'POST', body: '{}' });
-      this.status('分段已重建', 'ok');
-      await this.loadAsset(id);
-    } catch (err) {
-      this.status(err.message, 'danger');
-    }
-  },
-
-  async addTag() {
-    if (!this.currentAsset) return;
-    const id = this.currentAsset.asset.asset_id;
-    try {
-      await this.api(`/api/admin/assets/${id}/tags`, {
-        method: 'POST',
-        body: JSON.stringify({
-          dim_code: document.getElementById('tag-dim').value.trim(),
-          tag_value: document.getElementById('tag-value').value.trim(),
-          note: '管理台人工标签'
-        })
-      });
-      document.getElementById('tag-value').value = '';
-      this.status('标签已添加', 'ok');
-      await this.loadAsset(id);
-    } catch (err) {
-      this.status(err.message, 'danger');
-    }
-  },
-
-  async saveTag(assetTagId) {
-    try {
-      await this.api(`/api/admin/asset-tags/${assetTagId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          review_status: document.querySelector(`[data-tag-status="${assetTagId}"]`).value,
-          note: document.querySelector(`[data-tag-note="${assetTagId}"]`).value,
-          annotated_by: 'human'
-        })
-      });
-      this.status('标签已保存', 'ok');
-      await this.loadAsset(this.currentAsset.asset.asset_id);
-    } catch (err) {
-      this.status(err.message, 'danger');
-    }
-  },
-
-  async deleteTag(assetTagId) {
-    try {
-      await this.api(`/api/admin/asset-tags/${assetTagId}`, { method: 'DELETE' });
-      this.status('标签已驳回', 'ok');
-      await this.loadAsset(this.currentAsset.asset.asset_id);
-    } catch (err) {
-      this.status(err.message, 'danger');
-    }
-  },
-
-  async searchClaims() {
-    try {
-      const params = new URLSearchParams();
-      const q = document.getElementById('claim-query').value.trim();
-      const status = document.getElementById('claim-status-filter').value;
-      if (q) params.set('query', q);
-      if (status) params.set('status', status);
-      const data = await this.api(`/api/admin/claims?${params}`);
-      const list = document.getElementById('claim-results');
-      list.innerHTML = data.rows.map(row => `
-        <div class="result-item" data-claim='${this.escape(JSON.stringify(row))}'>
-          <div class="result-title">#${row.claim_id} ${this.escape(this.label('status', row.status))}</div>
-          <div class="result-preview">${this.escape(row.claim_text)}</div>
+      const data = await this.api(`/api/admin/audit?target_type=${encodeURIComponent(targetType)}&target_id=${encodeURIComponent(targetId)}&limit=20`);
+      document.getElementById('audit-list').innerHTML = data.rows.map(row => `
+        <div class="result-item">
+          <div class="result-title">${this.escape(row.action)}</div>
+          <div class="result-meta">${this.escape(row.actor)} / ${this.escape(row.created_at)}</div>
         </div>
       `).join('');
-      list.querySelectorAll('[data-claim]').forEach(el => {
-        el.addEventListener('click', () => this.loadClaim(JSON.parse(el.dataset.claim)));
-      });
-      this.status(`找到命题：${data.rows.length}`, 'ok');
-    } catch (err) {
-      this.status(err.message, 'danger');
-    }
-  },
-
-  newClaim() {
-    this.loadClaim({
-      claim_id: null,
-      claim_text: '',
-      summary: '',
-      status: 'unverified',
-      source_type: 'manual',
-      source_ref: '',
-      entities: [],
-      confidence: 0.5,
-      note: ''
-    });
-  },
-
-  loadClaim(claim) {
-    this.currentClaim = claim;
-    this.currentAsset = null;
-    document.getElementById('empty-state').classList.add('hidden');
-    document.getElementById('asset-editor').classList.add('hidden');
-    document.getElementById('claim-editor').classList.remove('hidden');
-    document.getElementById('claim-id').textContent = claim.claim_id ? `命题 ${claim.claim_id}` : '新建命题';
-    document.getElementById('claim-text').value = claim.claim_text || '';
-    document.getElementById('claim-summary').value = claim.summary || '';
-    document.getElementById('claim-status').value = claim.status || 'unverified';
-    document.getElementById('claim-source-type').value = claim.source_type || 'manual';
-    document.getElementById('claim-source-ref').value = claim.source_ref || '';
-    document.getElementById('claim-entities').value = JSON.stringify(claim.entities || []);
-    document.getElementById('claim-confidence').value = claim.confidence ?? 0.5;
-    document.getElementById('claim-note').value = claim.note || '';
-  },
-
-  async saveClaim() {
-    const body = {
-      claim_text: document.getElementById('claim-text').value,
-      summary: document.getElementById('claim-summary').value,
-      status: document.getElementById('claim-status').value,
-      source_type: document.getElementById('claim-source-type').value,
-      source_ref: document.getElementById('claim-source-ref').value,
-      entities: JSON.parse(document.getElementById('claim-entities').value || '[]'),
-      confidence: Number(document.getElementById('claim-confidence').value || 0.5),
-      note: document.getElementById('claim-note').value
-    };
-    try {
-      if (this.currentClaim?.claim_id) {
-        await this.api(`/api/admin/claims/${this.currentClaim.claim_id}`, { method: 'PATCH', body: JSON.stringify(body) });
-      } else {
-        const data = await this.api('/api/admin/claims', { method: 'POST', body: JSON.stringify(body) });
-        this.currentClaim = data.claim;
-      }
-      await this.searchClaims();
-      this.status('命题已保存', 'ok');
-    } catch (err) {
-      this.status(err.message, 'danger');
-    }
-  },
-
-  async addEvidence() {
-    if (!this.currentAsset) return;
-    const claimId = document.getElementById('evidence-claim-id').value.trim();
-    if (!claimId) return;
-    const chunkId = document.getElementById('evidence-chunk-id').value.trim();
-    try {
-      await this.api(`/api/admin/claims/${claimId}/evidence`, {
-        method: 'POST',
-        body: JSON.stringify({
-          asset_id: this.currentAsset.asset.asset_id,
-          chunk_id: chunkId || null,
-          evidence_type: 'supports'
-        })
-      });
-      this.status('证据已绑定', 'ok');
-      await this.loadAsset(this.currentAsset.asset.asset_id);
-    } catch (err) {
-      this.status(err.message, 'danger');
+    } catch {
+      document.getElementById('audit-list').innerHTML = '';
     }
   },
 
   async restoreRevision(revisionId) {
     try {
       const data = await this.api(`/api/admin/revisions/${revisionId}/restore`, { method: 'POST', body: '{}' });
+      await this.loadDocument(data.document.document_id);
       this.status('版本已恢复', 'ok');
-      await this.loadAsset(data.asset.asset_id);
     } catch (err) {
       this.status(err.message, 'danger');
     }
-  }
+  },
 };
 
 window.addEventListener('DOMContentLoaded', () => Admin.init());

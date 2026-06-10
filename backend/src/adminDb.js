@@ -1,32 +1,42 @@
-import { readFileSync, existsSync } from 'fs';
+import pg from 'pg';
+import dotenv from 'dotenv';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import pg from 'pg';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, '..', '..', '.env') });
 
 const { Pool } = pg;
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const SCHEMA = 'arknights_lore';
 
 const DB_CONFIG = {
   host: process.env.PGHOST || '127.0.0.1',
   port: Number(process.env.PGPORT || 5432),
-  database: process.env.PGDATABASE || 'arknights_lore',
+  database: process.env.PGDATABASE || 'arknights_lore_new',
   user: process.env.PGUSER || 'postgres',
   password: process.env.PGPASSWORD || '',
   ssl: false,
 };
 
-export const adminPool = new Pool({
+export let adminPool = new Pool({
   ...DB_CONFIG,
   max: 8,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
 });
 
+export function reconnectAdminPool() {
+  adminPool = new Pool({
+    ...DB_CONFIG,
+    max: 8,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  });
+}
+
 export async function adminQuery(sql, params = []) {
   const client = await adminPool.connect();
   try {
-    await client.query(`SET search_path TO "${SCHEMA}", public`);
+    await client.query('SET search_path TO public');
     return await client.query(sql, params);
   } finally {
     client.release();
@@ -36,7 +46,7 @@ export async function adminQuery(sql, params = []) {
 export async function withAdminTransaction(fn) {
   const client = await adminPool.connect();
   try {
-    await client.query(`SET search_path TO "${SCHEMA}", public`);
+    await client.query('SET search_path TO public');
     await client.query('BEGIN');
     const result = await fn(client);
     await client.query('COMMIT');
@@ -50,10 +60,38 @@ export async function withAdminTransaction(fn) {
 }
 
 export async function runAdminMigrations() {
-  const migrationPath = join(__dirname, '..', 'mcp-servers', 'lore-db-mcp', 'migrations', '002_admin_editor.sql');
-  if (!existsSync(migrationPath)) return;
-  const sql = readFileSync(migrationPath, 'utf-8');
-  await adminQuery(sql);
+  await adminQuery(`
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+      audit_id bigserial PRIMARY KEY,
+      actor text NOT NULL,
+      action text NOT NULL,
+      target_type text NOT NULL,
+      target_id text NOT NULL,
+      before_data jsonb,
+      after_data jsonb,
+      note text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_target
+      ON admin_audit_log(target_type, target_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS document_revisions (
+      revision_id bigserial PRIMARY KEY,
+      document_id bigint NOT NULL REFERENCES documents(document_id) ON DELETE CASCADE,
+      revision_kind varchar(40) NOT NULL,
+      title text,
+      subtitle text,
+      document_data jsonb,
+      units_data jsonb,
+      created_by text NOT NULL,
+      note text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_revisions_document
+      ON document_revisions(document_id, created_at DESC);
+  `);
 }
 
 export function getAdminActor(req) {

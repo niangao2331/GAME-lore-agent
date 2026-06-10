@@ -7,13 +7,15 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test:v2": "node v2-smoke-test.js"
+    "db:setup": "node ../scripts/db-setup.js",
+    "db:reset": "node ../scripts/db-setup.js --force",
+    "db:init": "node ../scripts/db-setup.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^5.1.0",
-    "nodejieba": "^3.5.8",
     "pg": "^8.21.0",
     "uuid": "^11.1.0"
   }

@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IRIS 管理台 // 资料库编辑</title>
+  <title>IRIS 管理台 // 新资料库编辑</title>
   <link rel="stylesheet" href="/css/admin.css">
 </head>
 <body>
   <div id="admin-app">
     <header class="topbar">
       <div>
-        <h1>IRIS 资料库编辑台</h1>
+        <h1>IRIS 新资料库编辑台</h1>
         <span id="status">就绪</span>
       </div>
       <div class="token-row">
-        <input id="admin-token" type="password" placeholder="ADMIN_TOKEN（本机开发可留空）">
+        <input id="admin-token" type="password" placeholder="ADMIN_TOKEN，本机开发可留空">
         <button id="save-token">保存令牌</button>
         <a href="/" class="link-btn">返回聊天</a>
       </div>
@@ -23,111 +23,130 @@
     <main class="layout">
       <aside class="left-pane">
         <div class="tabs">
-          <button class="tab active" data-tab="assets">资料</button>
-          <button class="tab" data-tab="claims">命题</button>
+          <button class="tab active" data-tab="documents">文档</button>
+          <button class="tab" data-tab="entities">实体</button>
         </div>
 
-        <section id="asset-search" class="search-panel">
-          <input id="asset-query" placeholder="搜索资料标题或正文">
+        <section id="document-search" class="search-panel">
+          <input id="document-query" placeholder="搜索标题、正文、元数据">
           <div class="search-row">
-            <input id="asset-category" placeholder="分类">
-            <input id="asset-tag" placeholder="标签">
+            <input id="document-content-type" placeholder="content_type">
+            <input id="document-entity" placeholder="实体名/别名">
           </div>
-          <button id="search-assets">搜索资料</button>
-          <div id="asset-results" class="result-list"></div>
+          <div class="search-row">
+            <input id="document-source-tier" type="number" min="1" max="5" placeholder="source_tier">
+            <select id="document-review-filter">
+              <option value="">全部状态</option>
+              <option value="pending">待处理</option>
+              <option value="approved">已确认</option>
+              <option value="needs_review">需复核</option>
+              <option value="seeded">种子数据</option>
+              <option value="rejected">已驳回</option>
+            </select>
+          </div>
+          <button id="search-documents">搜索文档</button>
+          <button id="new-document">新建文档</button>
+          <div id="document-results" class="result-list"></div>
         </section>
 
-        <section id="claim-search" class="search-panel hidden">
-          <input id="claim-query" placeholder="搜索命题">
-          <select id="claim-status-filter">
-            <option value="">全部状态</option>
-            <option value="unverified">未核验</option>
-            <option value="verified">已核验</option>
-            <option value="inferred">推断成立</option>
-            <option value="disputed">存在争议</option>
-            <option value="outdated">已过时</option>
-            <option value="rejected">已驳回</option>
-          </select>
-          <button id="search-claims">搜索命题</button>
-          <button id="new-claim">新建命题</button>
-          <div id="claim-results" class="result-list"></div>
+        <section id="entity-search" class="search-panel hidden">
+          <input id="entity-query" placeholder="搜索实体或别名">
+          <div class="search-row">
+            <input id="entity-type-filter" placeholder="entity_type">
+            <select id="entity-review-filter">
+              <option value="">全部状态</option>
+              <option value="pending">待处理</option>
+              <option value="approved">已确认</option>
+              <option value="needs_review">需复核</option>
+              <option value="seeded">种子数据</option>
+              <option value="rejected">已驳回</option>
+            </select>
+          </div>
+          <button id="search-entities">搜索实体</button>
+          <button id="new-entity">新建实体</button>
+          <div id="entity-results" class="result-list"></div>
         </section>
       </aside>
 
       <section class="center-pane">
-        <div id="empty-state" class="empty-state">选择一条资料或命题开始编辑。</div>
+        <div id="empty-state" class="empty-state">选择一个文档或实体开始编辑。</div>
 
-        <div id="asset-editor" class="editor hidden">
+        <div id="document-editor" class="editor hidden">
           <div class="editor-head">
             <div>
-              <span id="asset-id" class="pill"></span>
-              <input id="asset-title" class="title-input" placeholder="标题">
+              <span id="document-id" class="pill"></span>
+              <input id="document-title" class="title-input" placeholder="标题">
             </div>
-            <button id="save-asset">保存元数据</button>
+            <button id="save-document">保存文档</button>
           </div>
           <div class="meta-grid">
-            <input id="asset-subtitle" placeholder="副标题">
-            <input id="asset-source-name" placeholder="来源名称">
-            <input id="asset-source-url" placeholder="来源链接">
-            <input id="asset-carrier-type" placeholder="载体类型">
-            <input id="asset-narrative-layer" placeholder="叙事层级">
-            <input id="asset-character-name" placeholder="角色名">
-            <input id="asset-activity-name" placeholder="活动名">
-            <input id="asset-mission-code" placeholder="关卡编号">
+            <input id="document-subtitle" placeholder="副标题">
+            <input id="document-source-name" placeholder="来源名称">
+            <input id="document-source-uri" placeholder="来源 URI">
+            <input id="document-content-type-edit" placeholder="content_type">
+            <input id="document-source-tier-edit" type="number" min="1" max="5" placeholder="source_tier">
+            <select id="document-canon-status">
+              <option value="official">official</option>
+              <option value="semi_official">semi_official</option>
+              <option value="non_canon">non_canon</option>
+              <option value="unknown">unknown</option>
+            </select>
+            <select id="document-review-status">
+              <option value="pending">pending</option>
+              <option value="approved">approved</option>
+              <option value="needs_review">needs_review</option>
+              <option value="seeded">seeded</option>
+              <option value="rejected">rejected</option>
+            </select>
+            <input id="document-perspective-scope" placeholder="perspective_scope">
           </div>
-          <textarea id="asset-text" spellcheck="false"></textarea>
+          <textarea id="document-metadata" spellcheck="false" placeholder="metadata JSON"></textarea>
           <div class="button-row">
-            <button id="save-text">保存正文并重建分段</button>
-            <button id="rebuild-chunks">仅重建分段</button>
+            <button id="add-unit">新增文本单元</button>
+            <button id="rebuild-mentions">重建实体提及</button>
+            <button id="delete-document" class="danger">删除文档</button>
           </div>
-          <h3>正文分段</h3>
-          <div id="chunk-list" class="chunk-list"></div>
+          <h3>文本单元</h3>
+          <div id="unit-list" class="chunk-list"></div>
         </div>
 
-        <div id="claim-editor" class="editor hidden">
+        <div id="entity-editor" class="editor hidden">
           <div class="editor-head">
-            <span id="claim-id" class="pill">新建</span>
-            <select id="claim-status">
-              <option value="unverified">未核验</option>
-              <option value="verified">已核验</option>
-              <option value="inferred">推断成立</option>
-              <option value="disputed">存在争议</option>
-              <option value="outdated">已过时</option>
-              <option value="rejected">已驳回</option>
-            </select>
-            <button id="save-claim">保存命题</button>
+            <div>
+              <span id="entity-id" class="pill"></span>
+              <input id="entity-name" class="title-input" placeholder="实体名">
+            </div>
+            <button id="save-entity">保存实体</button>
           </div>
-          <textarea id="claim-text" class="claim-text" placeholder="命题正文"></textarea>
-          <textarea id="claim-summary" class="claim-summary" placeholder="摘要"></textarea>
           <div class="meta-grid">
-            <input id="claim-source-type" placeholder="来源类型" value="manual">
-            <input id="claim-source-ref" placeholder="来源引用">
-            <input id="claim-entities" placeholder='实体 JSON，例如 ["莱茵生命"]'>
-            <input id="claim-confidence" type="number" min="0" max="1" step="0.05" value="0.5">
+            <input id="entity-type" placeholder="entity_type">
+            <input id="entity-name-en" placeholder="英文名">
+            <select id="entity-review-status">
+              <option value="pending">pending</option>
+              <option value="approved">approved</option>
+              <option value="needs_review">needs_review</option>
+              <option value="seeded">seeded</option>
+              <option value="rejected">rejected</option>
+            </select>
+            <input id="alias-value" placeholder="新增别名">
           </div>
-          <textarea id="claim-note" class="claim-summary" placeholder="备注"></textarea>
+          <textarea id="entity-summary" placeholder="实体摘要"></textarea>
+          <textarea id="entity-properties" spellcheck="false" placeholder="properties JSON"></textarea>
+          <div class="button-row">
+            <button id="add-alias">新增别名</button>
+          </div>
         </div>
       </section>
 
       <aside class="right-pane">
         <section class="side-section">
-          <h2>标签</h2>
-          <div class="tag-add">
-            <input id="tag-dim" placeholder="维度，例如 FACTION">
-            <input id="tag-value" placeholder="标签值">
-            <button id="add-tag">添加</button>
-          </div>
-          <div id="tag-list" class="tag-list"></div>
+          <h2>实体提及</h2>
+          <div id="mention-list" class="result-list compact"></div>
         </section>
 
         <section class="side-section">
-          <h2>命题证据</h2>
-          <div class="tag-add">
-            <input id="evidence-claim-id" placeholder="命题 ID">
-            <input id="evidence-chunk-id" placeholder="分段 ID，可留空">
-            <button id="add-evidence">绑定</button>
-          </div>
-          <div id="asset-claims" class="result-list compact"></div>
+          <h2>别名</h2>
+          <div id="alias-list" class="tag-list"></div>
         </section>
 
         <section class="side-section">

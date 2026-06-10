@@ -261,7 +261,7 @@ BEGIN
       d.source_uri,
       d.source_tier,
       d.content_type::text,
-      d.canon_status,
+      d.canon_status::text AS canon_status,
       d.perspective_scope,
       d.metadata->>'operator_name' AS operator_name,
       d.metadata->>'operator_summary' AS operator_summary,
@@ -275,7 +275,7 @@ BEGIN
         ELSE 'weak_or_character_voice'
       END AS evidence_lane,
       CASE WHEN d.source_tier = 1 THEN 1 WHEN d.source_tier = 2 THEN 2 WHEN d.source_tier = 3 THEN 3 ELSE 5 END AS lane_priority,
-      CASE WHEN use_fts AND (d.search_vector @@ query_ts OR tu.search_vector @@ query_ts) THEN 100 ELSE 0 END +
+      (CASE WHEN use_fts AND (d.search_vector @@ query_ts OR tu.search_vector @@ query_ts) THEN 100 ELSE 0 END +
       CASE WHEN d.title ILIKE ANY(ARRAY(SELECT '%' || t || '%' FROM unnest(query_terms) t)) THEN 90 ELSE 0 END +
       CASE WHEN d.metadata->>'operator_name' ILIKE ANY(ARRAY(SELECT '%' || t || '%' FROM unnest(query_terms) t)) THEN 95 ELSE 0 END +
       CASE WHEN d.metadata->>'operator_summary' ILIKE ANY(ARRAY(SELECT '%' || t || '%' FROM unnest(query_terms) t)) THEN 75 ELSE 0 END +
@@ -285,14 +285,14 @@ BEGIN
       CASE WHEN tu.text ILIKE ANY(ARRAY(SELECT '%' || t || '%' FROM unnest(query_terms) t)) THEN 12 ELSE 0 END +
       CASE WHEN EXISTS (
         SELECT 1 FROM jsonb_array_elements_text(COALESCE(tu.metadata->'key_terms', '[]'::jsonb)) kt
-        WHERE kt.term ILIKE ANY(ARRAY(SELECT '%' || t || '%' FROM unnest(query_terms) t))
+        WHERE kt.value ILIKE ANY(ARRAY(SELECT '%' || t || '%' FROM unnest(query_terms) t))
       ) THEN 65 ELSE 0 END +
       CASE WHEN d.source_tier = 1 THEN 35 WHEN d.source_tier = 2 THEN 25 WHEN d.source_tier = 3 THEN 10 ELSE 0 END +
       CASE WHEN d.content_type = 'operator_profile' AND (
         d.metadata->>'operator_summary' ILIKE ANY(ARRAY(SELECT '%' || t || '%' FROM unnest(query_terms) t))
         OR d.metadata->>'operator_name' ILIKE ANY(ARRAY(SELECT '%' || t || '%' FROM unnest(query_terms) t))
       ) THEN 40 ELSE 0 END +
-      CASE WHEN tu.metadata ? 'summary' THEN 30 ELSE 0 END AS score
+      CASE WHEN tu.metadata ? 'summary' THEN 30 ELSE 0 END)::real AS score
     FROM text_units tu
     JOIN documents d ON d.document_id = tu.document_id
     WHERE (
@@ -319,11 +319,42 @@ BEGIN
   ),
   diversified AS (
     SELECT matched.*,
-           row_number() OVER (PARTITION BY evidence_lane ORDER BY score DESC, source_tier ASC, unit_index ASC) AS lane_rank
+           row_number() OVER (PARTITION BY matched.evidence_lane ORDER BY matched.score DESC, matched.source_tier ASC, matched.unit_index ASC) AS lane_rank
     FROM matched
   )
-  SELECT * FROM diversified
-  ORDER BY lane_rank ASC, lane_priority ASC, score DESC, unit_id ASC
+  SELECT
+    diversified.unit_id,
+    diversified.document_id,
+    diversified.unit_index,
+    diversified.unit_kind,
+    diversified.heading,
+    diversified.speaker,
+    diversified.scene_code,
+    diversified.text_preview,
+    diversified.summary,
+    diversified.summary_short,
+    diversified.summary_type,
+    diversified.summary_confidence,
+    diversified.perspective_note,
+    diversified.key_terms,
+    diversified.document_title,
+    diversified.subtitle,
+    diversified.source_name,
+    diversified.source_uri,
+    diversified.source_tier,
+    diversified.content_type,
+    diversified.canon_status,
+    diversified.perspective_scope,
+    diversified.operator_name,
+    diversified.operator_summary,
+    diversified.top_group,
+    diversified.group_name,
+    diversified.document_story_path,
+    diversified.evidence_lane,
+    diversified.lane_priority,
+    diversified.score
+  FROM diversified
+  ORDER BY diversified.lane_rank ASC, diversified.lane_priority ASC, diversified.score DESC, diversified.unit_id ASC
   LIMIT max_results;
 END;
 $$ LANGUAGE plpgsql STABLE;
@@ -359,7 +390,7 @@ BEGIN
     ds.title,
     ds.subtitle,
     ds.source_tier,
-    ds.content_type,
+    ds.content_type::text AS content_type,
     ds.top_group,
     ds.group_name,
     ds.story_path,
@@ -378,7 +409,7 @@ BEGIN
             OR tu.metadata->>'summary_short' ILIKE ANY(query_terms)
             OR EXISTS (
               SELECT 1 FROM jsonb_array_elements_text(COALESCE(tu.metadata->'key_terms', '[]'::jsonb)) kt
-              WHERE kt.term ILIKE ANY(query_terms)
+              WHERE kt.value ILIKE ANY(query_terms)
             )
           )
       )
@@ -401,7 +432,7 @@ BEGIN
             OR tu.metadata->>'summary_short' ILIKE ANY(query_terms)
             OR EXISTS (
               SELECT 1 FROM jsonb_array_elements_text(COALESCE(tu.metadata->'key_terms', '[]'::jsonb)) kt
-              WHERE kt.term ILIKE ANY(query_terms)
+              WHERE kt.value ILIKE ANY(query_terms)
             )
           )
       )
@@ -418,7 +449,7 @@ BEGIN
             OR tu.metadata->>'summary_short' ILIKE ANY(query_terms)
             OR EXISTS (
               SELECT 1 FROM jsonb_array_elements_text(COALESCE(tu.metadata->'key_terms', '[]'::jsonb)) kt
-              WHERE kt.term ILIKE ANY(query_terms)
+              WHERE kt.value ILIKE ANY(query_terms)
             )
           )
       ) THEN 1 ELSE 0 END
@@ -450,11 +481,11 @@ BEGIN
   RETURN QUERY
   SELECT
     e.entity_id,
-    e.entity_type,
+    e.entity_type::text AS entity_type,
     e.name,
     e.name_en,
     e.summary,
-    e.review_status,
+    e.review_status::text AS review_status,
     COALESCE(jsonb_agg(DISTINCT ea.alias) FILTER (WHERE ea.alias IS NOT NULL), '[]'::jsonb) AS aliases,
     MAX(GREATEST(
       CASE WHEN e.name = search_query THEN 100 ELSE 0 END,
@@ -466,7 +497,7 @@ BEGIN
       similarity(e.name, search_query) * 60,
       similarity(COALESCE(e.name_en, ''), search_query) * 55,
       similarity(COALESCE(ea.alias, ''), search_query) * 50
-    )) AS match_score,
+    ))::numeric AS match_score,
     ((
       SELECT COUNT(DISTINCT em.document_id)::int
       FROM entity_mentions em

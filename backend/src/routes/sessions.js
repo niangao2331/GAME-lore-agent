@@ -23,12 +23,4 @@ export function setupSessionRoutes(app, sessionStore) {
     sessionStore.delete(req.params.id);
     res.json({ ok: true });
   });
-
-  app.patch('/api/sessions/:id', (req, res) => {
-    const { title } = req.body;
-    if (title) {
-      sessionStore.updateTitle(req.params.id, title);
-    }
-    res.json({ ok: true });
-  });
 }

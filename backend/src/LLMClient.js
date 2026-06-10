@@ -3,7 +3,6 @@ export class LLMClient {
     this.baseUrl = config.baseUrl || 'https://api.openai.com';
     this.apiKey = config.apiKey;
     this.model = config.model || 'gpt-4o';
-    this.protocol = config.protocol || 'openai';
   }
 
   async *chatStream(messages, tools, signal) {
@@ -40,23 +39,30 @@ export class LLMClient {
     let buffer = '';
     const decoder = new TextDecoder();
 
-    for await (const chunk of res.body) {
-      if (signal?.aborted) break;
-      buffer += decoder.decode(chunk, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+    try {
+      for await (const chunk of res.body) {
+        if (signal?.aborted) break;
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const data = trimmed.slice(6);
-        if (data === '[DONE]') return;
-        try {
-          yield JSON.parse(data);
-        } catch {
-          // skip unparseable chunks
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+          const data = trimmed.slice(6);
+          if (data === '[DONE]') return;
+          try {
+            yield JSON.parse(data);
+          } catch {
+            // skip unparseable chunks
+          }
         }
       }
+    } catch (err) {
+      if (err?.message === 'terminated') {
+        throw new Error('The model connection was terminated during a long search. Try a narrower query or use a lower depth mode.');
+      }
+      throw err;
     }
   }
 
@@ -64,6 +70,5 @@ export class LLMClient {
     if (config.baseUrl) this.baseUrl = config.baseUrl;
     if (config.apiKey) this.apiKey = config.apiKey;
     if (config.model) this.model = config.model;
-    if (config.protocol) this.protocol = config.protocol;
   }
 }

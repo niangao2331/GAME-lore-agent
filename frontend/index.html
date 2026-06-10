@@ -3,171 +3,151 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IRIS // Arknights Lore Terminal</title>
+  <title>PRTS // 档案问询台</title>
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/sidebar.css">
   <link rel="stylesheet" href="/css/chat.css">
 </head>
 <body>
   <div id="app">
-    <!-- Sidebar -->
     <aside id="sidebar">
       <div class="sidebar-header">
         <div class="logo">
-          <span class="logo-icon">⚠</span>
-          <span class="logo-text">IRIS</span>
-          <span class="logo-sub">LORE TERMINAL</span>
+          <span class="logo-text logo-kernel">IRIS</span>
+          <span class="logo-sub">AGENT KERNEL</span>
+          <span class="logo-text logo-product">PRTS</span>
+          <span class="logo-sub">档案问询台</span>
         </div>
         <button id="btn-new-chat" class="btn-new-chat">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          NEW SESSION
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          新建问询
         </button>
       </div>
 
+      <div class="session-list-title">
+        <span>会话记录</span>
+        <span>ARCHIVE</span>
+      </div>
       <div id="session-list" class="session-list"></div>
 
       <div class="sidebar-footer">
         <div class="footer-status" id="footer-status">
           <span class="status-dot"></span>
-          <span>SYSTEM ONLINE</span>
+          <span>系统在线</span>
         </div>
         <button id="btn-settings" class="btn-settings">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          CONFIGURE
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          设置
         </button>
       </div>
     </aside>
 
-    <!-- Main Chat Area -->
     <main id="main">
       <div id="chat-header" class="chat-header">
         <div class="header-left">
+          <span class="header-label" id="header-label">资料库</span>
           <div class="mode-controls">
-            <select id="depth-select" class="mode-select">
-              <option value="quick">QUICK SCAN</option>
-              <option value="deep">DEEP ANALYSIS</option>
-              <option value="structured">STRUCTURED</option>
+            <span class="control-label">数据源</span>
+            <select id="db-select" class="mode-select">
+              <option value="">加载中...</option>
             </select>
-            <span class="mode-sep">|</span>
+            <span class="mode-sep"></span>
+            <span class="control-label">解析深度</span>
+            <select id="depth-select" class="mode-select">
+              <option value="quick">快速</option>
+              <option value="deep">深度</option>
+              <option value="structured">结构化</option>
+            </select>
+            <span class="mode-sep"></span>
+            <span class="control-label">输出形式</span>
             <select id="style-select" class="mode-select">
-              <option value="dossier">SYNTHESIS</option>
-              <option value="research">RESEARCH REPORT</option>
-              <option value="storytelling">STORYTELLING</option>
+              <option value="dossier">综合</option>
             </select>
           </div>
         </div>
-        <div id="header-status" class="header-status">READY</div>
+        <div id="header-status" class="header-status">系统就绪</div>
       </div>
 
       <div id="chat-messages" class="chat-messages">
         <div class="welcome-screen">
           <div class="welcome-badge">
             <span class="badge-stripe"></span>
-            ARKNIGHTS LORE DATABASE
+            <span id="welcome-badge-text">资料库</span>
             <span class="badge-stripe"></span>
           </div>
-          <div class="welcome-logo">⚠</div>
-          <h2>IRIS LORE TERMINAL</h2>
-          <p class="welcome-subtitle">Industrial Research & Information System</p>
+          <div class="welcome-logo">IRIS</div>
+          <h2>档案问询台</h2>
+          <p class="welcome-subtitle">内容检索 / 资料解析 / 情报分析</p>
           <div class="welcome-stats">
-            <div class="stat-item"><span class="stat-val" id="stat-assets">--</span><span class="stat-lbl">ASSETS</span></div>
+            <div class="stat-item"><span class="stat-val" id="stat-documents">--</span><span class="stat-lbl">文档</span></div>
             <div class="stat-sep"></div>
-            <div class="stat-item"><span class="stat-val" id="stat-tags">--</span><span class="stat-lbl">TAGS</span></div>
+            <div class="stat-item"><span class="stat-val" id="stat-entities">--</span><span class="stat-lbl">实体</span></div>
             <div class="stat-sep"></div>
-            <div class="stat-item"><span class="stat-val" id="stat-chunks">--</span><span class="stat-lbl">CHUNKS</span></div>
+            <div class="stat-item"><span class="stat-val" id="stat-units">--</span><span class="stat-lbl">文本单元</span></div>
           </div>
-          <p class="welcome-hint">Configure API key in settings, then begin inquiry.</p>
+          <p class="welcome-hint">在设置中配置 API 后，输入你的问题开始问询。</p>
         </div>
       </div>
 
       <div id="chat-input-area" class="chat-input-area">
         <div class="input-wrapper">
-          <textarea id="chat-input" placeholder="ENTER QUERY..." rows="1" autofocus></textarea>
-          <button id="btn-send" class="btn-send" title="Send">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          <textarea id="chat-input" placeholder="输入你的问题..." rows="1" autofocus></textarea>
+          <button id="btn-send" class="btn-send" title="发送">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
           </button>
-          <button id="btn-stop" class="btn-stop hidden" title="Halt">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          <button id="btn-stop" class="btn-stop hidden" title="停止">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
           </button>
         </div>
-        <p class="input-hint">[ ENTER TO TRANSMIT &nbsp;|&nbsp; SHIFT+ENTER FOR LINE BREAK ]</p>
+        <p class="input-hint">Enter 发送 / Shift + Enter 换行</p>
       </div>
     </main>
 
-    <!-- Settings Modal -->
     <div id="settings-modal" class="modal hidden">
       <div class="modal-backdrop"></div>
       <div class="modal-content">
         <div class="modal-header">
-          <h2>⚙ SYSTEM CONFIGURATION</h2>
+          <h2>系统设置</h2>
           <button class="btn-close" id="btn-close-settings">&times;</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label for="cfg-apikey">API KEY</label>
+            <label for="cfg-apikey">API Key</label>
             <input type="password" id="cfg-apikey" placeholder="sk-..." autocomplete="off">
           </div>
           <div class="form-group">
-            <label for="cfg-baseurl">BASE URL</label>
+            <label for="cfg-baseurl">Base URL</label>
             <input type="text" id="cfg-baseurl" placeholder="https://api.deepseek.com">
           </div>
           <div class="form-group">
-            <label for="cfg-model">MODEL</label>
+            <label for="cfg-model">模型</label>
             <input type="text" id="cfg-model" placeholder="deepseek-v4-pro">
           </div>
           <div class="form-group">
-            <label for="cfg-protocol">PROTOCOL</label>
-            <select id="cfg-protocol">
-              <option value="openai">OpenAI Compatible</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="cfg-round-delay">ROUND DELAY (MS)</label>
+            <label for="cfg-round-delay">轮询延迟 (ms)</label>
             <input type="number" id="cfg-round-delay" min="0" max="60000" step="250" placeholder="0">
-            <small class="field-hint">Delay before each follow-up model call after tools. Use 1000-3000ms for APIs that 429 easily.</small>
+            <small class="field-hint">工具调用后的下一轮模型请求延迟。容易限流时可设为 1000-3000ms。</small>
           </div>
           <div class="form-group">
-            <label for="cfg-fontsize">FONT SIZE (<span id="fontsize-label">13</span>PX)</label>
+            <label for="cfg-fontsize">字体大小 (<span id="fontsize-label">13</span>px)</label>
             <input type="range" id="cfg-fontsize" min="10" max="22" value="13" step="1">
-            <small class="field-hint">Adjust display font size. Default 13px, range 10–22px.</small>
+            <small class="field-hint">调整聊天与界面文字大小。</small>
           </div>
           <div class="form-group">
-            <label for="cfg-chat-width">CHAT WIDTH (<span id="chatwidth-label">100</span>%)</label>
-            <input type="range" id="cfg-chat-width" min="40" max="100" value="100" step="5">
-            <small class="field-hint">Constrain chat area width and center it. 100% = full width, 40% = narrow phone-like view.</small>
+            <label for="cfg-bubble-width">气泡宽度 (<span id="bubblewidth-label">100</span>%)</label>
+            <input type="range" id="cfg-bubble-width" min="45" max="100" value="100" step="5">
+            <small class="field-hint">按屏幕可用宽度调整消息气泡和输入框。100% 为贴近两侧，45% 为窄视图。</small>
+          </div>
+          <div class="form-group">
+            <label for="cfg-chat-offset">水平偏移 (<span id="chatoffset-label">0</span>px)</label>
+            <input type="range" id="cfg-chat-offset" min="-320" max="320" value="0" step="10">
+            <small class="field-hint">调整对话内容在左右留白中的位置。负值向左，正值向右。</small>
           </div>
           <div class="form-actions">
-            <button id="btn-save-settings" class="btn-primary">SAVE CONFIG</button>
-            <button id="btn-test-connection" class="btn-secondary">TEST LINK</button>
+            <button id="btn-save-settings" class="btn-primary">保存设置</button>
+            <button id="btn-test-connection" class="btn-secondary">测试连接</button>
           </div>
           <div id="settings-status" class="settings-status"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- MCP Config Modal -->
-    <div id="mcp-modal" class="modal hidden">
-      <div class="modal-backdrop"></div>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>🔌 MCP SERVER CONTROL</h2>
-          <button class="btn-close" id="btn-close-mcp">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div id="mcp-server-list" class="mcp-server-list"></div>
-          <div class="form-group">
-            <label>ADD MCP SERVER</label>
-            <div class="mcp-add-row">
-              <input type="text" id="mcp-add-id" placeholder="Server ID">
-              <select id="mcp-add-transport">
-                <option value="stdio">stdio</option>
-                <option value="http">http</option>
-              </select>
-            </div>
-            <div id="mcp-add-config"></div>
-            <button id="btn-add-mcp" class="btn-primary" style="margin-top:8px;">ADD SERVER</button>
-          </div>
-          <div id="mcp-status" class="settings-status"></div>
         </div>
       </div>
     </div>

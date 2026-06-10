@@ -1,12 +1,11 @@
 const Chat = {
   currentSessionId: null,
   isStreaming: false,
-  abortController: null,
 
   async send(message) {
     if (this.isStreaming) return;
     if (!Config.isValid()) {
-      UI.setStatus('CONFIGURE API KEY IN SETTINGS', 'error');
+      UI.setStatus('请先配置 API Key', 'error');
       UI.showSettings();
       return;
     }
@@ -16,13 +15,12 @@ const Chat = {
     this.isStreaming = true;
     this._setSending(true);
 
-    // Add user message to the bottom
     UI.addMessage('user', message);
 
-    // Create streaming placeholder AFTER user message
     const streamingEl = UI.addStreamingMessage();
     let fullContent = '';
     let currentToolDiv = null;
+    let currentToolGroup = null;
 
     try {
       const res = await fetch('/api/chat', {
@@ -35,16 +33,16 @@ const Chat = {
             apiKey: config.apiKey,
             baseUrl: config.baseUrl,
             model: config.model,
-            protocol: config.protocol,
             roundDelayMs: config.roundDelayMs
           },
           depth: document.getElementById('depth-select').value,
-          style: document.getElementById('style-select').value
+          style: document.getElementById('style-select').value,
+          database: document.getElementById('db-select').value
         })
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'TRANSMISSION FAILED' }));
+        const err = await res.json().catch(() => ({ error: '请求失败' }));
         throw new Error(err.error || `HTTP ${res.status}`);
       }
 
@@ -84,12 +82,15 @@ const Chat = {
               } else {
                 streamingEl.classList.remove('streaming-cursor');
               }
-              // Auto-scroll to bottom on each delta (only if user is at bottom)
               UI.scrollChatToBottom(false);
               break;
 
             case 'tool_start':
-              currentToolDiv = UI.addToolCard(event.name, event.args);
+              {
+                const toolEntry = UI.addToolCard(event.name, event.args, currentToolGroup);
+                currentToolGroup = toolEntry.groupEl;
+                currentToolDiv = toolEntry.itemEl;
+              }
               break;
 
             case 'tool_end':
@@ -101,16 +102,20 @@ const Chat = {
               break;
 
             case 'rate_wait':
-              UI.setStatus(`WAIT ${event.delayMs}MS BEFORE NEXT ROUND`);
+              UI.setStatus(`等待 ${event.delayMs}ms`);
               break;
 
             case 'error':
-              streamingEl.innerHTML = `<span style="color:var(--error)">[ERROR] ${UI.escapeHtml(event.message)}</span>`;
+              streamingEl.innerHTML = `<span style="color:var(--error)">[错误] ${UI.escapeHtml(event.message)}</span>`;
               UI.finalizeStreamingMessage(streamingEl);
-              UI.setStatus('ERROR', 'error');
+              UI.setStatus('错误', 'error');
               break;
 
             case 'done':
+              if (currentToolGroup) {
+                UI.finalizeToolGroup(currentToolGroup);
+                currentToolGroup = null;
+              }
               UI.finalizeStreamingMessage(streamingEl);
               if (fullContent) {
                 streamingEl.innerHTML = UI.renderMarkdown(fullContent);
@@ -122,15 +127,18 @@ const Chat = {
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
-        streamingEl.innerHTML = `<span style="color:var(--error)">[TRANSMISSION ERROR] ${UI.escapeHtml(err.message)}</span>`;
+        streamingEl.innerHTML = `<span style="color:var(--error)">[请求错误] ${UI.escapeHtml(err.message)}</span>`;
         UI.finalizeStreamingMessage(streamingEl);
-        UI.setStatus('TRANSMISSION ERROR', 'error');
+        UI.setStatus('请求错误', 'error');
       }
     } finally {
       this.isStreaming = false;
       this._setSending(false);
-      if (!(document.getElementById('header-status').textContent || '').includes('ERROR')) {
-        UI.setStatus('READY');
+      if (currentToolGroup) {
+        UI.finalizeToolGroup(currentToolGroup);
+      }
+      if (!(document.getElementById('header-status').textContent || '').includes('错误')) {
+        UI.setStatus('系统就绪');
       }
     }
   },
@@ -152,29 +160,10 @@ const Chat = {
 
     const session = await Sessions.get(sessionId);
     if (!session || !session.messages.length) {
-      container.innerHTML = `
-        <div class="welcome-screen">
-          <div class="welcome-badge">
-            <span class="badge-stripe"></span>
-            ARKNIGHTS LORE DATABASE
-            <span class="badge-stripe"></span>
-          </div>
-          <div class="welcome-logo">⚠</div>
-          <h2>IRIS LORE TERMINAL</h2>
-          <p class="welcome-subtitle">Industrial Research & Information System</p>
-          <div class="welcome-stats">
-            <div class="stat-item"><span class="stat-val" id="stat-assets">--</span><span class="stat-lbl">ASSETS</span></div>
-            <div class="stat-sep"></div>
-            <div class="stat-item"><span class="stat-val" id="stat-tags">--</span><span class="stat-lbl">TAGS</span></div>
-            <div class="stat-sep"></div>
-            <div class="stat-item"><span class="stat-val" id="stat-chunks">--</span><span class="stat-lbl">CHUNKS</span></div>
-          </div>
-          <p class="welcome-hint">Configure API key in settings, then begin inquiry.</p>
-        </div>`;
+      container.innerHTML = UI.welcomeMarkup();
       return;
     }
 
-    // Sort messages in chronological order
     const sorted = [...session.messages].sort((a, b) => {
       const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
       const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;

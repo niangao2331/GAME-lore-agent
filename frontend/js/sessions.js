@@ -12,13 +12,5 @@ const Sessions = {
 
   async remove(id) {
     await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
-  },
-
-  async updateTitle(id, title) {
-    await fetch(`/api/sessions/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title })
-    });
   }
 };

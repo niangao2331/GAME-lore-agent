@@ -22,6 +22,17 @@ function sleepWithAbort(ms, signal) {
   });
 }
 
+function compactToolResultForModel(name, resultStr) {
+  const maxChars = name.startsWith('mcp_lore-db_') ? 12000 : 20000;
+  if (resultStr.length <= maxChars) return resultStr;
+
+  return [
+    resultStr.slice(0, maxChars),
+    '',
+    `[TRUNCATED ${resultStr.length - maxChars} chars] The tool result was too large for the next model round. Use more targeted searches or read_context around specific unit_ids instead of repeatedly reading full documents.`
+  ].join('\n');
+}
+
 export class Agent extends EventEmitter {
   constructor(sessionId, config, { toolRegistry, skillRegistry }) {
     super();
@@ -154,7 +165,9 @@ Current working directory: ${process.cwd()}`;
 
           this.messages.push(assistantMsg);
 
-          for (const tc of toolCalls) {
+          const toolCallsForRound = toolCalls.slice(0, 4);
+
+          for (const tc of toolCallsForRound) {
             this.emit('tool_start', tc.name, tc.arguments);
 
             let toolResult;
@@ -166,13 +179,25 @@ Current working directory: ${process.cwd()}`;
             }
 
             const resultStr = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult);
+            const modelResultStr = compactToolResultForModel(tc.name, resultStr);
 
             this.emit('tool_end', tc.name, resultStr);
 
             this.messages.push({
               role: 'tool',
               tool_call_id: tc.id,
-              content: resultStr
+              content: modelResultStr
+            });
+          }
+
+          for (const tc of toolCalls.slice(4)) {
+            this.emit('tool_start', tc.name, tc.arguments);
+            const skippedResult = 'Skipped to keep the long search stable. Continue with a narrower search or read fewer full documents at once.';
+            this.emit('tool_end', tc.name, skippedResult);
+            this.messages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: skippedResult
             });
           }
         } else {

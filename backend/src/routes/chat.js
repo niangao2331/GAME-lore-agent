@@ -29,20 +29,21 @@ function compactReadResultForLog(parsed, originalChars) {
   return {
     compacted: true,
     originalChars,
+    document_id: parsed.document_id,
     asset_id: parsed.asset_id,
-    asset_kind: parsed.asset_kind,
     title: parsed.title,
     subtitle: parsed.subtitle,
     source_name: parsed.source_name,
-    category_code: parsed.category_code,
-    category_name: parsed.category_name,
-    carrier_type: parsed.carrier_type,
-    character_name: parsed.character_name,
-    activity_name: parsed.activity_name,
+    source_uri: parsed.source_uri,
+    source_tier: parsed.source_tier,
+    content_type: parsed.content_type,
+    canon_status: parsed.canon_status,
+    top_group: parsed.top_group,
+    group_name: parsed.group_name,
     char_count: parsed.char_count,
     full_text_chars: typeof parsed.full_text === 'string' ? parsed.full_text.length : 0,
-    tags_count: Array.isArray(parsed.tags) ? parsed.tags.length : 0,
-    variants_count: Array.isArray(parsed.variants) ? parsed.variants.length : 0,
+    units_count: Array.isArray(parsed.units) ? parsed.units.length : 0,
+    entities_count: Array.isArray(parsed.entities) ? parsed.entities.length : 0,
   };
 }
 
@@ -52,29 +53,30 @@ function compactReadContextResultForLog(parsed, originalChars) {
     compacted: true,
     originalChars,
     asset: parsed.asset ? {
+      document_id: parsed.asset.document_id,
       asset_id: parsed.asset.asset_id,
-      asset_kind: parsed.asset.asset_kind,
       title: parsed.asset.title,
       subtitle: parsed.asset.subtitle,
       source_name: parsed.asset.source_name,
-      category_code: parsed.asset.category_code,
-      category_name: parsed.asset.category_name,
-      carrier_type: parsed.asset.carrier_type,
-      character_name: parsed.asset.character_name,
-      activity_name: parsed.asset.activity_name,
+      source_uri: parsed.asset.source_uri,
+      source_tier: parsed.asset.source_tier,
+      content_type: parsed.asset.content_type,
+      top_group: parsed.asset.top_group,
+      group_name: parsed.asset.group_name,
     } : null,
+    anchorUnitId: parsed.anchorUnitId,
     anchorChunkId: parsed.anchorChunkId,
     radius: parsed.radius,
-    chunks: Array.isArray(parsed.chunks)
-      ? parsed.chunks.map(chunk => ({
-        chunk_id: chunk.chunk_id,
-        chunk_index: chunk.chunk_index,
-        heading: chunk.heading,
-        speaker: chunk.speaker,
-        start_offset: chunk.start_offset,
-        end_offset: chunk.end_offset,
-        token_estimate: chunk.token_estimate,
-        chunk_text_chars: typeof chunk.chunk_text === 'string' ? chunk.chunk_text.length : 0,
+    units: Array.isArray(parsed.units)
+      ? parsed.units.map(unit => ({
+        unit_id: unit.unit_id,
+        chunk_id: unit.chunk_id,
+        unit_index: unit.unit_index,
+        unit_kind: unit.unit_kind,
+        heading: unit.heading,
+        speaker: unit.speaker,
+        scene_code: unit.scene_code,
+        text_chars: typeof unit.text === 'string' ? unit.text.length : 0,
       }))
       : [],
   };
@@ -96,7 +98,7 @@ function compactToolResultForLog(name, result) {
   return result;
 }
 
-export function setupChatRoute(app, agentManager, sessionStore, interactionLogger) {
+export function setupChatRoute(app, agentManager, sessionStore, interactionLogger, getActiveDatabase) {
   app.post('/api/chat', async (req, res) => {
     const { sessionId: reqSessionId, message, config, skill, depth, style } = req.body;
 
@@ -114,7 +116,8 @@ export function setupChatRoute(app, agentManager, sessionStore, interactionLogge
     // Resolve effective skill name: explicit skill override > depth+style mapping > default
     const effectiveDepth = depth || 'quick';
     const effectiveStyle = style || 'dossier';
-    const effectiveSkill = skill || getSkillName(effectiveDepth, effectiveStyle);
+    const database = req.body.database || (getActiveDatabase ? getActiveDatabase() : 'arknights');
+    const effectiveSkill = skill || getSkillName(database, effectiveDepth, effectiveStyle);
     const depthCfg = DEPTH_CONFIG[effectiveDepth] || DEPTH_CONFIG.quick;
     const roundDelayMs = Math.min(Math.max(Math.round(Number(config.roundDelayMs || 0)), 0), 60000);
     const turnId = uuidv4();

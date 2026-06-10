@@ -22,71 +22,83 @@ export class SkillRegistry {
   }
 
   _registerDefaults() {
-    const loreIntelPrompt = readSkillBody('lore-intel');
+    // Load database-specific skill prompts
+    const arknightsPrompt = readSkillBody('lore-arknights');
+    const genericPrompt = readSkillBody('lore-generic');
 
-    const variants = [
+    // Arknights-specific skills (game-tuned prompts)
+    const arknightsVariants = [
       {
-        name: 'lore-intel',
-        displayName: 'Intelligence Analyst [Synthesis]',
-        description: 'Quick lore intelligence workflow. Natural synthesis output.',
+        name: 'lore-arknights',
+        displayName: '综合解析 [快速]',
+        description: '快速综合解析，适用于明日方舟资料库。',
         depth: 'quick',
         style: 'dossier',
-        icon: 'IA'
+        database: 'arknights',
+        icon: 'AQ'
       },
       {
-        name: 'lore-intel-research',
-        displayName: 'Intelligence Analyst [Report]',
-        description: 'Quick lore intelligence workflow. Research report output.',
-        depth: 'quick',
-        style: 'research',
-        icon: 'IR'
-      },
-      {
-        name: 'lore-intel-story',
-        displayName: 'Intelligence Analyst [Story]',
-        description: 'Quick lore intelligence workflow. Narrative output.',
-        depth: 'quick',
-        style: 'storytelling',
-        icon: 'IS'
-      },
-      {
-        name: 'lore-intel-deep',
-        displayName: 'Intelligence Analyst [Deep Synthesis]',
-        description: 'Deep lore intelligence workflow. Natural synthesis output.',
+        name: 'lore-arknights-deep',
+        displayName: '综合解析 [深度]',
+        description: '深度综合解析，适用于明日方舟资料库。',
         depth: 'deep',
         style: 'dossier',
-        icon: 'ID'
+        database: 'arknights',
+        icon: 'AD'
       },
       {
-        name: 'lore-intel-deep-research',
-        displayName: 'Intelligence Analyst [Deep Report]',
-        description: 'Deep lore intelligence workflow. Research report output.',
-        depth: 'deep',
-        style: 'research',
-        icon: 'DR'
-      },
-      {
-        name: 'lore-intel-deep-story',
-        displayName: 'Intelligence Analyst [Deep Story]',
-        description: 'Deep lore intelligence workflow. Narrative output.',
-        depth: 'deep',
-        style: 'storytelling',
-        icon: 'DS'
-      },
-      {
-        name: 'lore-intel-structured',
-        displayName: 'Intelligence Analyst [Structured]',
-        description: 'Metadata-driven scope planning. No evidence search during plan phase. Scoped subtasks by series/group.',
+        name: 'lore-arknights-structured',
+        displayName: '综合解析 [结构化]',
+        description: '结构化综合解析，适用于明日方舟资料库。',
         depth: 'structured',
         style: 'dossier',
-        icon: 'ST'
+        database: 'arknights',
+        icon: 'AS'
       }
     ];
 
-    for (const variant of variants) {
+    // Generic skills (de-gamed prompts for other databases)
+    const genericVariants = [
+      {
+        name: 'lore-generic',
+        displayName: '综合解析 [快速]',
+        description: '快速综合解析，适用于通用资料库。',
+        depth: 'quick',
+        style: 'dossier',
+        database: 'generic',
+        icon: 'GQ'
+      },
+      {
+        name: 'lore-generic-deep',
+        displayName: '综合解析 [深度]',
+        description: '深度综合解析，适用于通用资料库。',
+        depth: 'deep',
+        style: 'dossier',
+        database: 'generic',
+        icon: 'GD'
+      },
+      {
+        name: 'lore-generic-structured',
+        displayName: '综合解析 [结构化]',
+        description: '结构化综合解析，适用于通用资料库。',
+        depth: 'structured',
+        style: 'dossier',
+        database: 'generic',
+        icon: 'GS'
+      }
+    ];
+
+    for (const variant of arknightsVariants) {
       this.register({
         ...variant,
-        systemPrompt: buildLoreIntelPrompt(variant.depth, variant.style, loreIntelPrompt)
+        systemPrompt: buildLoreIntelPrompt(variant.database, variant.depth, variant.style, arknightsPrompt)
+      });
+    }
+
+    for (const variant of genericVariants) {
+      this.register({
+        ...variant,
+        systemPrompt: buildLoreIntelPrompt(variant.database, variant.depth, variant.style, genericPrompt)
       });
     }
   }
@@ -96,7 +108,7 @@ export class SkillRegistry {
   }
 
   get(name) {
-    return this.skills.get(name) || this.skills.get('lore-intel');
+    return this.skills.get(name) || this.skills.get('lore-arknights');
   }
 
   has(name) {
