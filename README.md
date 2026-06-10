@@ -1,4 +1,5 @@
 # GAME Lore Agent — 游戏资料库智能问答平台
+<img width="2333" height="1206" alt="image" src="https://github.com/user-attachments/assets/b2422574-a984-4f3e-a5d1-b59eba74959e" />
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
