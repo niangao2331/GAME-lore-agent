@@ -11,6 +11,7 @@
 
 从性能和经济实惠角度来说，我更推荐使用deepseekv4pro来进行查询，虽然flash也是可以使用的，但是在面对海量的文本和隐藏在游戏中的各种暗线以及蛛丝马迹，pro的注意力表现明显更好。
 
+agent内核基于https://github.com/Lianues/Iris ，当然如果你想要换成其他agent也是没有问题的。
 
 部署后访问 `http://localhost:3000`
 
